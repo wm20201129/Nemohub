@@ -1,0 +1,982 @@
+{% extends "base.html" %}
+
+{% block title %}积分管理{% endblock %}
+
+{% block content %}
+<style>
+    /* 页面特定样式 */
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 24px;
+        background: white;
+        padding: 20px 30px;
+        border-radius: 16px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+    }
+
+    .page-header h1 {
+        margin: 0;
+        font-size: 24px;
+        color: #2d3748;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .header-controls {
+        display: flex;
+        gap: 16px;
+        align-items: center;
+    }
+
+    .class-select-wrapper {
+        position: relative;
+    }
+
+    .class-select {
+        padding: 10px 16px;
+        padding-right: 36px;
+        border: 2px solid #e2e8f0;
+        border-radius: 12px;
+        font-size: 14px;
+        color: #4a5568;
+        appearance: none;
+        background: white;
+        cursor: pointer;
+        transition: all 0.2s;
+        min-width: 200px;
+    }
+
+    .class-select:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        outline: none;
+    }
+
+    .class-select-icon {
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #a0aec0;
+        pointer-events: none;
+    }
+
+    /* 主要内容区 */
+    .main-card {
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        min-height: 600px;
+    }
+
+    .toolbar {
+        padding: 20px 30px;
+        border-bottom: 1px solid #edf2f7;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #f8fafc;
+    }
+
+    .toolbar-left {
+        display: flex;
+        gap: 12px;
+    }
+
+    .toolbar-right {
+        position: relative;
+    }
+
+    .search-input {
+        padding: 10px 16px;
+        padding-left: 40px;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        width: 280px;
+        transition: all 0.2s;
+    }
+
+    .search-input:focus {
+        border-color: #667eea;
+        width: 320px;
+        outline: none;
+    }
+
+    .search-icon {
+        position: absolute;
+        left: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #a0aec0;
+    }
+
+    /* 表格样式 */
+    .table-responsive {
+        overflow-x: auto;
+        flex: 1;
+    }
+
+    .modern-table {
+        width: 100%;
+        border-collapse: collapse;
+        white-space: nowrap;
+    }
+
+    .modern-table th {
+        background: #f8fafc;
+        padding: 16px 30px;
+        text-align: left;
+        font-weight: 600;
+        color: #4a5568;
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        border-bottom: 1px solid #edf2f7;
+    }
+
+    .modern-table td {
+        padding: 16px 30px;
+        border-bottom: 1px solid #edf2f7;
+        color: #2d3748;
+        vertical-align: middle;
+    }
+
+    .modern-table tr:last-child td {
+        border-bottom: none;
+    }
+
+    .modern-table tr:hover {
+        background: #f7fafc;
+    }
+
+    /* 积分徽章 */
+    .points-tag {
+        display: inline-flex;
+        align-items: center;
+        padding: 6px 12px;
+        background: linear-gradient(135deg, #e0f2fe 0%, #ebf8ff 100%);
+        color: #0284c7;
+        border-radius: 20px;
+        font-weight: 600;
+        font-size: 14px;
+    }
+
+    .points-tag i {
+        margin-right: 6px;
+        font-size: 12px;
+    }
+
+    /* 操作按钮 */
+    .action-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        border: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s;
+        margin-right: 6px;
+    }
+
+    .btn-add-mini { background: #f0fdf4; color: #16a34a; }
+    .btn-add-mini:hover { background: #dcfce7; }
+
+    .btn-sub-mini { background: #fef2f2; color: #dc2626; }
+    .btn-sub-mini:hover { background: #fee2e2; }
+
+    /* 批量操作模态框 - 全新设计 */
+    .batch-modal-body {
+        display: flex;
+        height: 500px;
+        gap: 20px;
+    }
+
+    .selector-panel {
+        flex: 1;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .selector-header {
+        padding: 15px;
+        background: #f8fafc;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .selector-tabs {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 10px;
+    }
+
+    .tab-btn {
+        flex: 1;
+        padding: 8px;
+        border: none;
+        background: transparent;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 500;
+        color: #64748b;
+    }
+
+    .tab-btn.active {
+        background: white;
+        color: #667eea;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .selector-search {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid #cbd5e0;
+        border-radius: 6px;
+        font-size: 13px;
+    }
+
+    .selector-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 10px;
+    }
+
+    .select-item {
+        display: flex;
+        align-items: center;
+        padding: 8px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background 0.2s;
+        margin-bottom: 2px;
+    }
+
+    .select-item:hover {
+        background: #f1f5f9;
+    }
+
+    .select-item input {
+        margin-right: 10px;
+        accent-color: #667eea;
+    }
+
+    .operation-panel {
+        width: 300px;
+        padding: 20px;
+        background: #f8fafc;
+        border-radius: 12px;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .op-header {
+        font-size: 16px;
+        font-weight: 600;
+        color: #2d3748;
+        margin-bottom: 20px;
+        padding-bottom: 15px;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .selected-summary {
+        margin-bottom: 20px;
+        padding: 10px;
+        background: #e0f2fe;
+        border-radius: 8px;
+        color: #0369a1;
+        font-size: 13px;
+        text-align: center;
+    }
+
+    .radio-group {
+        display: flex;
+        background: #e2e8f0;
+        padding: 4px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+    }
+
+    .radio-option {
+        flex: 1;
+        text-align: center;
+    }
+
+    .radio-option input {
+        display: none;
+    }
+
+    .radio-option label {
+        display: block;
+        padding: 8px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 500;
+        color: #64748b;
+        transition: all 0.2s;
+    }
+
+    .radio-option input:checked + label {
+        background: white;
+        color: #2d3748;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    }
+
+    /* 动画 */
+    @keyframes slideDown {
+        from { transform: translateY(-10px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+    }
+
+    .animate-slide-down {
+        animation: slideDown 0.3s ease-out forwards;
+    }
+
+    /* 移动端适配 */
+    @media (max-width: 768px) {
+        .page-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 15px;
+            padding: 15px;
+        }
+
+        .header-controls {
+            width: 100%;
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .class-select {
+            width: 100%;
+            min-width: 0;
+        }
+        
+        .class-select-wrapper {
+            width: 100%;
+        }
+
+        .toolbar {
+            flex-direction: column;
+            gap: 15px;
+            padding: 15px;
+        }
+
+        .toolbar-left {
+            width: 100%;
+            display: grid;
+            grid-template-columns: 1fr 1px 1fr 1fr; /* 全选 | 线 | 加分 | 减分 */
+            gap: 8px;
+            align-items: center;
+        }
+
+        .toolbar-right {
+            width: 100%;
+        }
+
+        .search-input {
+            width: 100%;
+        }
+
+        .search-input:focus {
+            width: 100%;
+        }
+        
+        /* 批量模态框适配 */
+        .batch-modal-body {
+            flex-direction: column;
+            height: auto; /* 让父容器高度自适应，而不是固定死 */
+            max-height: calc(100vh - 150px); /* 确保模态框主体不超出视口 */
+            overflow-y: auto; /* 允许整个批量操作主体滚动 */
+        }
+
+        .selector-panel {
+            height: auto; /* 取消固定高度 */
+            max-height: 300px; /* 给一个最大高度，确保它能滚动 */
+            overflow-y: auto; /* 确保选择面板内部可滚动 */
+        }
+
+        .operation-panel {
+            width: 100%;
+            height: auto; /* 允许操作面板高度自适应 */
+            max-height: 400px; /* 给一个最大高度 */
+            overflow-y: auto; /* 确保操作面板内部可滚动 */
+        }
+    }
+</style>
+
+<div class="page-header">
+    <h1><i class="fas fa-chart-line" style="color: #667eea;"></i> 积分管理控制台</h1>
+    <div class="header-controls">
+        <div class="class-select-wrapper">
+            <select id="classSelect" class="class-select" onchange="loadData()">
+                <option value="">加载班级中...</option>
+            </select>
+            <i class="fas fa-chevron-down class-select-icon"></i>
+        </div>
+        <button class="btn btn-primary" onclick="openBatchModal()">
+            <i class="fas fa-layer-group"></i> 批量调整
+        </button>
+    </div>
+</div>
+
+<div class="main-card">
+    <div class="toolbar">
+        <div class="toolbar-left">
+            <button class="btn btn-secondary" onclick="toggleSelectAll()">
+                <i class="far fa-check-square"></i> 全选/反选
+            </button>
+            <div style="width: 1px; height: 24px; background: #e2e8f0; margin: 0 10px;"></div>
+            <button class="btn btn-success" onclick="openQuickAction('add')" id="quickAddBtn" disabled>
+                <i class="fas fa-plus"></i> 加分
+            </button>
+            <button class="btn btn-danger" onclick="openQuickAction('sub')" id="quickSubBtn" disabled>
+                <i class="fas fa-minus"></i> 减分
+            </button>
+        </div>
+        <div class="toolbar-right">
+            <i class="fas fa-search search-icon"></i>
+            <input type="text" class="search-input" id="tableSearch" placeholder="搜索姓名或学号..." oninput="filterTable()">
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="modern-table">
+            <thead>
+                <tr>
+                    <th width="50">#</th>
+                    <th>学生信息</th>
+                    <th>所属分组</th>
+                    <th>当前积分</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="studentTableBody">
+                <!-- 数据行 -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- 批量操作模态框 -->
+<div id="batchModal" class="modal">
+    <div class="modal-content" style="max-width: 900px; width: 90%;">
+        <div class="modal-header">
+            <h2><i class="fas fa-sliders-h"></i> 批量积分调整</h2>
+            <span class="close" onclick="closeModal('batchModal')">&times;</span>
+        </div>
+        <div class="modal-body batch-modal-body">
+            <!-- 左侧：选择器 -->
+            <div class="selector-panel">
+                <div class="selector-header">
+                    <div class="selector-tabs">
+                        <button class="tab-btn active" onclick="switchTab('students')">按学生选择</button>
+                        <button class="tab-btn" onclick="switchTab('groups')">按分组选择</button>
+                    </div>
+                    <input type="text" class="selector-search" id="modalSearch" placeholder="搜索..." oninput="filterModalList()">
+                </div>
+                <div class="selector-content" id="selectorList">
+                    <!-- 动态加载列表 -->
+                </div>
+            </div>
+
+            <!-- 右侧：操作区 -->
+            <div class="operation-panel">
+                <div class="op-header">操作设置</div>
+                
+                <div class="selected-summary">
+                    已选择 <span id="selectedCount" style="font-weight: bold;">0</span> 个对象
+                </div>
+
+                <div class="radio-group">
+                    <div class="radio-option">
+                        <input type="radio" name="opType" id="opAdd" value="add" checked onchange="updateOpStyle()">
+                        <label for="opAdd">增加</label>
+                    </div>
+                    <div class="radio-option">
+                        <input type="radio" name="opType" id="opSub" value="sub" onchange="updateOpStyle()">
+                        <label for="opSub">减少</label>
+                    </div>
+                    <div class="radio-option">
+                        <input type="radio" name="opType" id="opSet" value="set" onchange="updateOpStyle()">
+                        <label for="opSet">设置</label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>分值</label>
+                    <input type="number" id="opAmount" class="form-control" value="10" min="1">
+                </div>
+
+                <div class="form-group" style="flex: 1;">
+                    <label>原因</label>
+                    <textarea id="opReason" class="form-control" style="height: 100px; resize: none;" placeholder="请输入变动原因..."></textarea>
+                    <div style="margin-top: 8px; display: flex; gap: 5px; flex-wrap: wrap;">
+                        <span class="badge" onclick="fillReason('作业优秀')" style="cursor: pointer; background: #e2e8f0;">作业优秀</span>
+                        <span class="badge" onclick="fillReason('课堂表现')" style="cursor: pointer; background: #e2e8f0;">课堂表现</span>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary" style="width: 100%; margin-top: auto;" onclick="submitBatch()">
+                    <i class="fas fa-check"></i> 确认提交
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+    <!-- 单人操作模态框 -->
+    <div id="singleModal" class="modal">
+        <div class="modal-content" style="max-width: 500px; width: 90%;">
+            <div class="modal-header">
+                <h2 id="singleModalTitle"><i class="fas fa-user-edit"></i> 积分调整</h2>
+                <span class="close" onclick="closeModal('singleModal')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>学生姓名</label>
+                    <input type="text" id="singleStudentName" class="form-control" readonly style="background-color: #f7fafc;">
+                    <input type="hidden" id="singleStudentId">
+                </div>
+                
+                <div class="form-group">
+                    <label>操作类型</label>
+                    <div class="radio-group">
+                        <div class="radio-option">
+                            <input type="radio" name="singleOpType" id="singleOpAdd" value="add" checked onchange="updateSingleOpStyle()">
+                            <label for="singleOpAdd">增加</label>
+                        </div>
+                        <div class="radio-option">
+                            <input type="radio" name="singleOpType" id="singleOpSub" value="sub" onchange="updateSingleOpStyle()">
+                            <label for="singleOpSub">减少</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>分值</label>
+                    <input type="number" id="singleOpAmount" class="form-control" value="1" min="1">
+                </div>
+
+                <div class="form-group">
+                    <label>原因</label>
+                    <textarea id="singleOpReason" class="form-control" style="height: 100px; resize: none;" placeholder="请输入变动原因..."></textarea>
+                    <div style="margin-top: 8px; display: flex; gap: 5px; flex-wrap: wrap;">
+                        <span class="badge" onclick="fillSingleReason('作业优秀')" style="cursor: pointer; background: #e2e8f0;">作业优秀</span>
+                        <span class="badge" onclick="fillSingleReason('课堂表现')" style="cursor: pointer; background: #e2e8f0;">课堂表现</span>
+                        <span class="badge" onclick="fillSingleReason('回答问题')" style="cursor: pointer; background: #e2e8f0;">回答问题</span>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary" style="width: 100%; margin-top: 20px;" onclick="submitSingle()">
+                    <i class="fas fa-check"></i> 确认提交
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // 全局数据状态
+    let allStudents = [];
+    let allGroups = [];
+    let selectedStudentIds = new Set();
+    let currentTab = 'students'; // 'students' or 'groups'
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', () => {
+        loadClasses();
+    });
+
+    // 加载班级列表
+    async function loadClasses() {
+        try {
+            const res = await fetch('/api/classes');
+            const classes = await res.json();
+            const select = document.getElementById('classSelect');
+            select.innerHTML = '<option value="">请选择班级...</option>';
+            classes.forEach(c => {
+                select.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+            });
+            
+            // 如果有班级，默认选中第一个并加载
+            if(classes.length > 0) {
+                select.value = classes[0].id;
+                loadData();
+            }
+        } catch (e) {
+            console.error(e);
+            showToast('加载班级失败', 'error');
+        }
+    }
+
+    // 加载学生和分组数据
+    async function loadData() {
+        const classId = document.getElementById('classSelect').value;
+        if (!classId) return;
+
+        try {
+            const [studentsRes, groupsRes] = await Promise.all([
+                fetch(`/api/classes/${classId}/students`),
+                fetch(`/api/groups?class_id=${classId}`)
+            ]);
+
+            allStudents = await studentsRes.json();
+            allGroups = await groupsRes.json();
+            
+            // 将分组名称映射到学生对象中，方便显示
+            const groupMap = {};
+            allGroups.forEach(g => groupMap[g.id] = g);
+            allStudents.forEach(s => {
+                s.groupObj = s.group_id ? groupMap[s.group_id] : null;
+            });
+
+            selectedStudentIds.clear();
+            renderTable();
+            updateToolbar();
+        } catch (e) {
+            console.error(e);
+            showToast('加载数据失败', 'error');
+        }
+    }
+
+    // 渲染主表格
+    function renderTable() {
+        const tbody = document.getElementById('studentTableBody');
+        tbody.innerHTML = '';
+        
+        if(allStudents.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 40px; color: #a0aec0;">暂无学生数据</td></tr>';
+            return;
+        }
+
+        allStudents.forEach(s => {
+            const groupName = s.groupObj ? 
+                `<span class="badge" style="background:${s.groupObj.color}20; color:${s.groupObj.color}">${s.groupObj.name}</span>` : 
+                '<span style="color:#cbd5e0">-</span>';
+            
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>
+                    <input type="checkbox" onchange="toggleSelect(${s.id}, this.checked)" 
+                           ${selectedStudentIds.has(s.id) ? 'checked' : ''} 
+                           style="width: 18px; height: 18px; accent-color: #667eea;">
+                </td>
+                <td>
+                    <div style="font-weight: 500;">${s.name}</div>
+                    <div style="font-size: 12px; color: #718096;">${s.student_id}</div>
+                </td>
+                <td>${groupName}</td>
+                <td>
+                    <div class="points-tag">
+                        <i class="fas fa-star"></i> ${s.points}
+                    </div>
+                </td>
+                <td>
+                    <button class="action-btn btn-add-mini" title="加分" onclick="openSingleModal(${s.id}, 'add')">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                    <button class="action-btn btn-sub-mini" title="减分" onclick="openSingleModal(${s.id}, 'sub')">
+                        <i class="fas fa-minus"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    // 表格搜索过滤
+    function filterTable() {
+        const term = document.getElementById('tableSearch').value.toLowerCase();
+        const rows = document.querySelectorAll('#studentTableBody tr');
+        
+        allStudents.forEach((s, idx) => {
+            const match = s.name.toLowerCase().includes(term) || s.student_id.toLowerCase().includes(term);
+            rows[idx].style.display = match ? '' : 'none';
+        });
+    }
+
+    // 选择逻辑
+    function toggleSelect(id, checked) {
+        if(checked) selectedStudentIds.add(id);
+        else selectedStudentIds.delete(id);
+        updateToolbar();
+    }
+
+    function toggleSelectAll() {
+        // 如果当前有未选中的，则全选；如果全选中了，则全不选
+        // 仅针对当前搜索结果
+        const term = document.getElementById('tableSearch').value.toLowerCase();
+        const visibleStudents = allStudents.filter(s => 
+            s.name.toLowerCase().includes(term) || s.student_id.toLowerCase().includes(term)
+        );
+        
+        const allSelected = visibleStudents.every(s => selectedStudentIds.has(s.id));
+        
+        visibleStudents.forEach(s => {
+            if (allSelected) selectedStudentIds.delete(s.id);
+            else selectedStudentIds.add(s.id);
+        });
+        
+        renderTable();
+        updateToolbar();
+    }
+
+    function updateToolbar() {
+        const count = selectedStudentIds.size;
+        const addBtn = document.getElementById('quickAddBtn');
+        const subBtn = document.getElementById('quickSubBtn');
+        
+        if (count > 0) {
+            addBtn.disabled = false;
+            subBtn.disabled = false;
+            addBtn.innerHTML = `<i class="fas fa-plus"></i> 给 ${count} 人加分`;
+            subBtn.innerHTML = `<i class="fas fa-minus"></i> 给 ${count} 人减分`;
+        } else {
+            addBtn.disabled = true;
+            subBtn.disabled = true;
+            addBtn.innerHTML = `<i class="fas fa-plus"></i> 加分`;
+            subBtn.innerHTML = `<i class="fas fa-minus"></i> 减分`;
+        }
+    }
+
+    // ============ 模态框逻辑 ============
+
+    // 打开全功能批量模态框
+    function openBatchModal() {
+        // 如果表格里有选中的人，默认带入
+        // 这里我们可以做一个设计决策：是清空还是保留？
+        // 为了方便，如果表格里选了人，我们就切换到“学生Tab”并勾选他们。
+        
+        switchTab('students');
+        document.getElementById('batchModal').style.display = 'block';
+        updateSelectedCount();
+    }
+
+    // 打开快捷操作（也就是预设了加/减的批量操作）
+    function openQuickAction(type) {
+        openBatchModal();
+        if (type === 'add') {
+            document.getElementById('opAdd').checked = true;
+        } else {
+            document.getElementById('opSub').checked = true;
+        }
+        updateOpStyle();
+    }
+
+    // 打开单人操作模态框
+    function openSingleModal(id, type) {
+        const student = allStudents.find(s => s.id === id);
+        if(!student) return;
+
+        document.getElementById('singleStudentName').value = student.name;
+        document.getElementById('singleStudentId').value = student.id;
+        document.getElementById('singleOpAmount').value = 1; // 默认1分
+        document.getElementById('singleOpReason').value = '';
+        
+        if (type === 'add') {
+            document.getElementById('singleOpAdd').checked = true;
+        } else {
+            document.getElementById('singleOpSub').checked = true;
+        }
+        updateSingleOpStyle();
+        
+        document.getElementById('singleModal').style.display = 'block';
+    }
+
+    function updateSingleOpStyle() {
+        // 可以根据操作类型改变样式
+    }
+    
+    function fillSingleReason(text) {
+        document.getElementById('singleOpReason').value = text;
+    }
+
+    // 提交单人更改
+    async function submitSingle() {
+        const studentId = document.getElementById('singleStudentId').value;
+        const opType = document.querySelector('input[name="singleOpType"]:checked').value;
+        let amount = parseInt(document.getElementById('singleOpAmount').value);
+        const reason = document.getElementById('singleOpReason').value;
+
+        if (opType === 'sub') amount = -amount;
+
+        try {
+            const res = await fetch(`/api/students/${studentId}/points`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    change_amount: amount,
+                    reason: reason,
+                    teacher: '班主任' 
+                })
+            });
+            
+            const data = await res.json();
+            if (res.ok) {
+                alert('操作成功');
+                closeModal('singleModal');
+                loadData(); // 刷新数据
+            } else {
+                alert('操作失败: ' + data.error);
+            }
+        } catch (e) {
+            console.error(e);
+            alert('网络错误');
+        }
+    }
+
+    // 切换Tab
+    function switchTab(tab) {
+        currentTab = tab;
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelector(`.tab-btn[onclick="switchTab('${tab}')"]`).classList.add('active');
+        
+        renderSelectorList();
+    }
+
+    // 渲染模态框里的选择列表
+    function renderSelectorList() {
+        const container = document.getElementById('selectorList');
+        const term = document.getElementById('modalSearch').value.toLowerCase();
+        container.innerHTML = '';
+
+        if (currentTab === 'students') {
+            allStudents.forEach(s => {
+                if (s.name.toLowerCase().includes(term) || s.student_id.toLowerCase().includes(term)) {
+                    const div = document.createElement('div');
+                    div.className = 'select-item';
+                    div.innerHTML = `
+                        <input type="checkbox" onchange="toggleModalSelect(${s.id}, this.checked)" 
+                               ${selectedStudentIds.has(s.id) ? 'checked' : ''}>
+                        <div style="flex:1;">${s.name} <span style="color:#a0aec0;font-size:12px;">${s.student_id}</span></div>
+                    `;
+                    container.appendChild(div);
+                }
+            });
+        } else {
+            // 分组列表
+            allGroups.forEach(g => {
+                if (g.name.toLowerCase().includes(term)) {
+                    // 检查该组是否全选了
+                    const groupStudents = allStudents.filter(s => s.group_id === g.id);
+                    const isAllSelected = groupStudents.length > 0 && groupStudents.every(s => selectedStudentIds.has(s.id));
+                    
+                    const div = document.createElement('div');
+                    div.className = 'select-item';
+                    div.innerHTML = `
+                        <input type="checkbox" onchange="toggleGroupSelect(${g.id}, this.checked)" 
+                               ${isAllSelected ? 'checked' : ''}>
+                        <div style="flex:1; display:flex; align-items:center;">
+                            <span style="width:10px;height:10px;border-radius:50%;background:${g.color};margin-right:8px;"></span>
+                            ${g.name} 
+                            <span style="color:#a0aec0;font-size:12px;margin-left:5px;">(${groupStudents.length}人)</span>
+                        </div>
+                    `;
+                    container.appendChild(div);
+                }
+            });
+        }
+    }
+
+    function filterModalList() {
+        renderSelectorList();
+    }
+
+    function toggleModalSelect(id, checked) {
+        if(checked) selectedStudentIds.add(id);
+        else selectedStudentIds.delete(id);
+        updateSelectedCount();
+        renderTable(); // 同步更新主表格状态
+        updateToolbar();
+    }
+
+    function toggleGroupSelect(groupId, checked) {
+        const groupStudents = allStudents.filter(s => s.group_id === groupId);
+        groupStudents.forEach(s => {
+            if(checked) selectedStudentIds.add(s.id);
+            else selectedStudentIds.delete(s.id);
+        });
+        updateSelectedCount();
+        renderTable();
+        updateToolbar();
+    }
+
+    function updateSelectedCount() {
+        document.getElementById('selectedCount').textContent = selectedStudentIds.size;
+    }
+
+    function updateOpStyle() {
+        // 可以根据操作类型改变按钮颜色等
+    }
+
+    function fillReason(text) {
+        document.getElementById('opReason').value = text;
+    }
+
+    function closeModal(id) {
+        document.getElementById(id).style.display = 'none';
+    }
+
+    // 提交更改
+    async function submitBatch() {
+        const ids = Array.from(selectedStudentIds);
+        if (ids.length === 0) {
+            alert('请先选择学生');
+            return;
+        }
+
+        const opType = document.querySelector('input[name="opType"]:checked').value;
+        let amount = parseInt(document.getElementById('opAmount').value);
+        const reason = document.getElementById('opReason').value;
+
+        if (opType === 'sub') amount = -amount;
+        
+        // 注意：如果是 'set' 操作，后端可能需要单独处理，或者我们在这里计算差值？
+        // 现有的 /api/students/batch/points 接口支持 change_amount，但不支持直接 set。
+        // 如果需要 set，得循环处理或者改后端。
+        // 为了简单，我们先只支持 add 和 sub。如果选了 set，提示暂不支持或转为后端逻辑。
+        
+        if (opType === 'set') {
+            alert('批量设置功能暂未开放，请使用加减分。');
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/students/batch/points', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    student_ids: ids,
+                    change_amount: amount,
+                    reason: reason,
+                    teacher: '班主任' // 简化
+                })
+            });
+            
+            const data = await res.json();
+            if (res.ok) {
+                // showToast(data.message, 'success'); // 如果 main.js 没坏可以用这个
+                alert('操作成功: ' + data.message);
+                closeModal('batchModal');
+                loadData(); // 刷新数据
+            } else {
+                alert('操作失败: ' + data.error);
+            }
+        } catch (e) {
+            console.error(e);
+            alert('网络错误');
+        }
+    }
+</script>
+{% endblock %}

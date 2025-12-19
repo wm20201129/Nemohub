@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>简单测试</title>
+    <script>
+    // 测试用的简化版 main.js 函数
+    function testLoadClasses() {
+        console.log("测试 loadClasses 函数...");
+        
+        // 模拟选择器
+        const mockSelect = document.createElement('select');
+        mockSelect.id = 'class-select';
+        document.body.appendChild(mockSelect);
+        
+        // 调用 loadClasses
+        loadClasses();
+    }
+    
+    // 等待页面加载
+    window.onload = function() {
+        console.log("页面加载完成，开始测试...");
+        testLoadClasses();
+    };
+    </script>
+</head>
+<body>
+    <h1>简单测试页面</h1>
+    <p>打开控制台查看结果</p>
+</body>
+</html>

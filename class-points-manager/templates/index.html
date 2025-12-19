@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+
+{% block title %}首页{% endblock %}
+
+{% block content %}
+<style>
+    /* 移动端响应式样式 */
+    @media (max-width: 768px) {
+        .dashboard-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 15px;
+        }
+
+        .dashboard-header .btn {
+            width: 100%;
+            justify-content: center;
+        }
+
+        .class-selector {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: stretch;
+        }
+
+        .class-selector select {
+            width: 100%;
+        }
+
+        .stats-grid {
+            grid-template-columns: repeat(2, 1fr); /* 平板/大手机显示两列 */
+        }
+
+        .action-buttons {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+
+    @media (max-width: 576px) {
+        .stats-grid {
+            grid-template-columns: 1fr; /* 小屏手机一列 */
+        }
+
+        .action-buttons {
+            grid-template-columns: 1fr; /* 按钮一列 */
+        }
+
+        .info-card h3, .recent-activity h3, .quick-actions h3 {
+            font-size: 1.1rem;
+        }
+    }
+</style>
+<div class="dashboard">
+    <div class="dashboard-header">
+        <h1><i class="fas fa-tachometer-alt"></i> 控制面板</h1>
+        <button class="btn btn-primary" onclick="showClassModal()">
+            <i class="fas fa-plus"></i> 创建新班级
+        </button>
+    </div>
+
+    <!-- 确保这个元素存在 -->
+    <div class="class-selector">
+        <label for="class-select"><i class="fas fa-school"></i> 选择班级：</label>
+        <select id="class-select" onchange="loadClassData()">
+            <option value="">请选择班级</option>
+        </select>
+    </div>
+
+    <div id="class-info" class="class-info" style="display: none;">
+        <div class="info-card">
+            <h3><i class="fas fa-info-circle"></i> 班级信息</h3>
+            <div class="info-content">
+                <p><strong>班级名称：</strong><span id="class-name"></span></p>
+                <p><strong>班主任：</strong><span id="class-teacher"></span></p>
+                <p><strong>创建时间：</strong><span id="class-created"></span></p>
+            </div>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon" style="background-color: #4CAF50;">
+                    <i class="fas fa-users"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 id="total-students">0</h3>
+                    <p>学生总数</p>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon" style="background-color: #2196F3;">
+                    <i class="fas fa-star"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 id="avg-points">0</h3>
+                    <p>平均积分</p>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon" style="background-color: #FF9800;">
+                    <i class="fas fa-crown"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 id="max-points">0</h3>
+                    <p>最高积分</p>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon" style="background-color: #9C27B0;">
+                    <i class="fas fa-history"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 id="min-points">0</h3>
+                    <p>最低积分</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="recent-activity">
+            <h3><i class="fas fa-history"></i> 最近活动</h3>
+            <div class="activity-list" id="recent-changes">
+                <!-- 最近积分变动将在这里显示 -->
+            </div>
+        </div>
+
+        <div class="quick-actions">
+            <h3><i class="fas fa-bolt"></i> 快速操作</h3>
+            <div class="action-buttons">
+                <a href="/students" class="action-btn">
+                    <i class="fas fa-user-plus"></i>
+                    <span>添加学生</span>
+                </a>
+                <a href="/points" class="action-btn">
+                    <i class="fas fa-star-half-alt"></i>
+                    <span>管理积分</span>
+                </a>
+                <a href="/ranking" class="action-btn">
+                    <i class="fas fa-medal"></i>
+                    <span>查看排行榜</span>
+                </a>
+                <button class="action-btn" onclick="exportData()">
+                    <i class="fas fa-download"></i>
+                    <span>导出数据</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 创建班级模态框 -->
+<div id="classModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2><i class="fas fa-plus-circle"></i> 创建新班级</h2>
+            <span class="close" onclick="closeClassModal()">&times;</span>
+        </div>
+        <div class="modal-body">
+            <form id="classForm" onsubmit="createClass(event)">
+                <div class="form-group">
+                    <label for="className"><i class="fas fa-school"></i> 班级名称 *</label>
+                    <input type="text" id="className" required placeholder="例如：三年级一班">
+                </div>
+                <div class="form-group">
+                    <label for="classTeacher"><i class="fas fa-chalkboard-teacher"></i> 班主任</label>
+                    <input type="text" id="classTeacher" placeholder="请输入班主任姓名">
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeClassModal()">取消</button>
+                    <button type="submit" class="btn btn-primary">创建班级</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// 确保 loadClassData 函数存在
+if (typeof loadClassData === 'undefined') {
+    function loadClassData() {
+        const classId = document.getElementById('class-select').value;
+        if (!classId) {
+            console.log("没有选择班级");
+            return;
+        }
+        
+        console.log("加载班级数据，班级ID:", classId);
+        // 这里可以添加加载班级数据的逻辑
+    }
+}
+
+// 确保 showClassModal 函数存在
+if (typeof showClassModal === 'undefined') {
+    function showClassModal() {
+        alert("创建班级功能");
+        // 这里可以添加创建班级模态框的逻辑
+    }
+}
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadClasses();
+});
+</script>
+{% endblock %}
