@@ -134,7 +134,10 @@ async function loadClasses() {
             'class-select',
             'student-class-select', 
             'points-class-select',
-            'ranking-class-select'
+            'ranking-class-select',
+            'randomClassSelect',
+            'reportClassSelect',
+            'deleteClassSelect'
         ];
         
         selectors.forEach(selectorId => {
