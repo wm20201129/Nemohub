@@ -27,29 +27,43 @@ body {
 }
 
 .nav-container {
-    max-width: 1200px;
+    max-width: 100%;
     margin: 0 auto;
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    padding: 0 20px;
+    padding: 0 30px;
+    height: 70px;
 }
 
 .nav-brand {
     display: flex;
     align-items: center;
-    font-size: 1.5rem;
+    font-size: 1.4rem;
     font-weight: 700;
+    flex-shrink: 0;
+    margin-right: 20px;
+    white-space: nowrap;
 }
 
 .nav-brand i {
     margin-right: 10px;
-    font-size: 1.8rem;
+    font-size: 1.6rem;
 }
 
 .nav-menu {
+    flex: 1;
     display: flex;
-    gap: 30px;
+    justify-content: center;
+    gap: 10px;
+    overflow-x: auto;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none;  /* IE 10+ */
+    white-space: nowrap;
+    margin: 0 20px;
+}
+
+.nav-menu::-webkit-scrollbar { 
+    display: none;  /* Chrome Safari */
 }
 
 .nav-link {
@@ -57,10 +71,12 @@ body {
     text-decoration: none;
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 16px;
+    gap: 6px;
+    padding: 8px 14px;
     border-radius: 20px;
     transition: all 0.3s ease;
+    flex-shrink: 0;
+    font-size: 0.95rem;
 }
 
 .nav-link:hover {
@@ -77,6 +93,12 @@ body {
     display: flex;
     align-items: center;
     gap: 10px;
+    margin-left: auto;
+    flex-shrink: 0;
+    white-space: nowrap;
+    background: rgba(0,0,0,0.1);
+    padding: 6px 16px;
+    border-radius: 20px;
 }
 
 /* 页脚样式 */
