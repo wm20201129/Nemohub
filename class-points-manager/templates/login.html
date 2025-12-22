@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统登录 - 班级积分管理系统</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body, html {
+            height: 100%; margin: 0;
+            font-family: 'Noto Sans SC', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex; align-items: center; justify-content: center;
+        }
+        .login-card {
+            background: white; border-radius: 24px; padding: 40px;
+            width: 90%; max-width: 400px; text-align: center;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.2);
+        }
+        .logo-area { margin-bottom: 30px; }
+        .logo-area i { font-size: 3rem; color: #667eea; margin-bottom: 10px; }
+        .logo-area h1 { font-size: 1.5rem; color: #2d3748; margin: 0; }
+        .input-group { position: relative; margin-bottom: 20px; }
+        .input-group i { position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: #a0aec0; }
+        input {
+            width: 100%; padding: 15px 15px 15px 45px; border: 2px solid #edf2f7;
+            border-radius: 12px; outline: none; font-size: 1rem; transition: all 0.2s;
+            box-sizing: border-box;
+        }
+        input:focus { border-color: #667eea; box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1); }
+        .login-btn {
+            width: 100%; padding: 15px; background: #667eea; color: white;
+            border: none; border-radius: 12px; font-size: 1rem; font-weight: 700;
+            cursor: pointer; transition: all 0.2s;
+        }
+        .login-btn:hover { background: #5a67d8; transform: translateY(-2px); }
+        .error-hint { color: #e53e3e; font-size: 0.85rem; margin-top: 10px; display: none; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <div class="logo-area">
+            <i class="fas fa-user-shield"></i>
+            <h1>班级积分管理系统</h1>
+            <p style="color: #718096; font-size: 0.9rem;">请输入管理密码进入系统</p>
+        </div>
+        <div class="input-group">
+            <i class="fas fa-lock"></i>
+            <input type="password" id="password" placeholder="请输入密码..." autofocus>
+        </div>
+        <button class="login-btn" onclick="handleLogin()">进入系统</button>
+        <div id="errorHint" class="error-hint">密码错误，请重试</div>
+    </div>
+
+    <script>
+        async function handleLogin() {
+            const pwd = document.getElementById('password').value;
+            const hint = document.getElementById('errorHint');
+            
+            if(!pwd) return;
+
+            try {
+                const res = await fetch('/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({password: pwd})
+                });
+                
+                if(res.ok) {
+                    window.location.href = '/'; // 登录成功跳回首页
+                } else {
+                    hint.style.display = 'block';
+                    document.getElementById('password').value = '';
+                    document.getElementById('password').focus();
+                }
+            } catch(e) {
+                alert('网络错误');
+            }
+        }
+
+        // 回车键登录
+        document.getElementById('password').addEventListener('keypress', (e) => {
+            if(e.key === 'Enter') handleLogin();
+        });
+    </script>
+</body>
+</html>

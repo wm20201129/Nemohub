@@ -1,0 +1,391 @@
+{% extends "base.html" %}
+
+{% block title %}随机点名{% endblock %}
+
+{% block content %}
+<style>
+    /* 页面整体布局 */
+    .random-page-container {
+        width: 100%;
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .main-board {
+        background: white;
+        width: 100%;
+        border-radius: 24px;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.05);
+        padding: 40px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-height: 600px;
+        position: relative;
+    }
+
+    /* 顶部控制区 */
+    .top-controls {
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 60px;
+    }
+
+    /* 下拉框美化 */
+    .class-select-wrapper {
+        position: relative;
+        display: flex;
+        align-items: center;
+    }
+
+    .class-select-wrapper i {
+        position: absolute;
+        left: 12px;
+        color: #94a3b8;
+        pointer-events: none;
+    }
+
+    .class-select {
+        padding: 10px 36px 10px 36px;
+        border: 2px solid #e2e8f0;
+        border-radius: 12px;
+        font-size: 0.95rem;
+        color: #334155;
+        background-color: #f8fafc;
+        cursor: pointer;
+        transition: all 0.2s;
+        min-width: 220px;
+        appearance: none;
+        outline: none;
+    }
+
+    .class-select:focus {
+        border-color: #6366f1;
+        background-color: white;
+        box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+    }
+
+    .class-select-wrapper::after {
+        content: "\f078";
+        font-family: "Font Awesome 5 Free";
+        font-weight: 900;
+        position: absolute;
+        right: 12px;
+        font-size: 10px;
+        color: #94a3b8;
+        pointer-events: none;
+    }
+
+    /* 模式切换按钮 */
+    .mode-toggle {
+        display: flex;
+        background: #f1f5f9;
+        padding: 4px;
+        border-radius: 10px;
+    }
+
+    .mode-btn {
+        padding: 8px 24px;
+        border-radius: 8px;
+        border: none;
+        background: transparent;
+        color: #64748b;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .mode-btn.active {
+        background: white;
+        color: #6366f1;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    }
+
+    /* 核心显示区 */
+    .display-screen {
+        width: 100%;
+        max-width: 800px;
+        height: 300px;
+        background: #0f172a;
+        border-radius: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 10px solid #e2e8f0;
+        box-shadow: inset 0 0 60px rgba(0,0,0,0.5), 0 20px 40px rgba(0,0,0,0.1);
+        margin-bottom: 60px;
+        overflow: hidden;
+    }
+
+    .display-name {
+        font-size: 8rem;
+        font-weight: 900;
+        color: white;
+        text-shadow: 0 0 30px rgba(255,255,255,0.2);
+        user-select: none;
+    }
+
+    /* 开始按钮 */
+    .action-button {
+        width: 130px;
+        height: 130px;
+        border-radius: 50%;
+        border: none;
+        background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+        color: white;
+        font-size: 1.8rem;
+        font-weight: 700;
+        cursor: pointer;
+        box-shadow: 0 10px 30px rgba(79, 70, 229, 0.4);
+        transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .action-button:hover {
+        transform: scale(1.1);
+        box-shadow: 0 15px 40px rgba(79, 70, 229, 0.5);
+    }
+
+    .action-button.running {
+        background: linear-gradient(135deg, #f43f5e 0%, #e11d48 100%);
+        box-shadow: 0 10px 30px rgba(225, 29, 72, 0.4);
+    }
+
+    /* 结果弹窗样式 */
+    .result-overlay {
+        display: none;
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(15, 23, 42, 0.8);
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+        backdrop-filter: blur(8px);
+    }
+
+    .result-card {
+        background: white;
+        border-radius: 28px;
+        padding: 40px;
+        text-align: center;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        width: 90%;
+        max-width: 450px;
+        animation: popIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .avatar-circle {
+        width: 100px;
+        height: 100px;
+        background: #eef2ff;
+        color: #4f46e5;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 3rem;
+        margin: 0 auto 20px;
+    }
+
+    .btn-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+        margin-top: 25px;
+    }
+
+    .score-btn {
+        padding: 15px;
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        background: white;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 5px;
+        font-weight: 600;
+    }
+
+    .score-btn:hover { transform: translateY(-2px); background: #f8fafc; }
+    .btn-p2 { color: #d97706; border-color: #ffedd5; }
+    .btn-p1 { color: #059669; border-color: #d1fae5; }
+    .btn-m1 { color: #dc2626; border-color: #fee2e2; }
+    .btn-zero { color: #64748b; border-color: #f1f5f9; }
+
+    @keyframes popIn {
+        from { transform: scale(0.8); opacity: 0; }
+        to { transform: scale(1); opacity: 1; }
+    }
+</style>
+
+<div class="random-page-container">
+    <div class="main-board">
+        <div class="top-controls">
+            <!-- 班级选择 -->
+            <div class="class-select-wrapper">
+                <i class="fas fa-chalkboard"></i>
+                <select id="randomClassSelect" class="class-select" onchange="loadRandomStudents()">
+                    <option value="">正在加载班级...</option>
+                </select>
+            </div>
+
+            <!-- 模式切换 -->
+            <div class="mode-toggle">
+                <button class="mode-btn active" onclick="setMode('all')" id="modeAll">全班随机</button>
+                <button class="mode-btn" onclick="setMode('group')" id="modeGroup">先抽小组</button>
+            </div>
+        </div>
+
+        <!-- 屏幕 -->
+        <div class="display-screen">
+            <div id="screenText" class="display-name">READY</div>
+        </div>
+
+        <!-- 按钮 -->
+        <button id="startBtn" class="action-button" onclick="toggleRandom()">
+            开始
+        </button>
+    </div>
+</div>
+
+<!-- 结果弹窗 -->
+<div id="resultModal" class="result-overlay">
+    <div class="result-card">
+        <div class="avatar-circle"><i class="fas fa-user"></i></div>
+        <h2 id="resultName" style="font-size: 3rem; margin-bottom: 5px; color: #1e293b;">张三</h2>
+        <div id="resultGroup" style="color: #6366f1; background: #eef2ff; padding: 4px 12px; border-radius: 20px; display: inline-block; margin-bottom: 20px; font-weight: 600;">第一组</div>
+        
+        <div class="btn-grid">
+            <button class="score-btn btn-p2" onclick="submitResult(2, '回答精彩')">
+                <i class="fas fa-crown"></i> 精彩 (+2)
+            </button>
+            <button class="score-btn btn-p1" onclick="submitResult(1, '回答正确')">
+                <i class="fas fa-thumbs-up"></i> 正确 (+1)
+            </button>
+            <button class="score-btn btn-zero" onclick="closeResultModal()">
+                <i class="fas fa-eye"></i> 仅点名
+            </button>
+            <button class="score-btn btn-m1" onclick="submitResult(-1, '表现不佳')">
+                <i class="fas fa-times"></i> 不佳 (-1)
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let students = [];
+    let isRunning = false;
+    let timer = null;
+    let currentMode = 'all'; 
+    let currentStudent = null;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        console.log('Random page init...');
+        
+        // 轮询检查 main.js 是否填好了下拉框
+        let checkCount = 0;
+        const checkInterval = setInterval(() => {
+            const select = document.getElementById('randomClassSelect');
+            checkCount++;
+            
+            if (select && select.options.length > 1) {
+                clearInterval(checkInterval);
+                if (!select.value) select.selectedIndex = 1;
+                loadRandomStudents();
+            }
+            
+            if (checkCount > 20) clearInterval(checkInterval);
+        }, 200);
+    });
+
+    async function loadRandomStudents() {
+        const select = document.getElementById('randomClassSelect');
+        if (!select || !select.value) return;
+
+        try {
+            const res = await fetch(`/api/classes/${select.value}/students`);
+            students = await res.json();
+            document.getElementById('screenText').textContent = students.length > 0 ? 'READY' : '无学生';
+        } catch (e) {
+            console.error('Fetch error:', e);
+            document.getElementById('screenText').textContent = 'ERROR';
+        }
+    }
+
+    function setMode(mode) {
+        currentMode = mode;
+        document.getElementById('modeAll').classList.toggle('active', mode === 'all');
+        document.getElementById('modeGroup').classList.toggle('active', mode === 'group');
+    }
+
+    function toggleRandom() {
+        if(isRunning) stopRandom();
+        else startRandom();
+    }
+
+    function startRandom() {
+        if(students.length === 0) { alert('没有名单数据'); return; }
+        isRunning = true;
+        const btn = document.getElementById('startBtn');
+        btn.textContent = '停止';
+        btn.classList.add('running');
+        
+        const screen = document.getElementById('screenText');
+        timer = setInterval(() => {
+            const rand = students[Math.floor(Math.random() * students.length)];
+            screen.textContent = rand.name;
+        }, 50); 
+    }
+
+    function stopRandom() {
+        isRunning = false;
+        clearInterval(timer);
+        const btn = document.getElementById('startBtn');
+        btn.textContent = '开始';
+        btn.classList.remove('running');
+        
+        const final = students[Math.floor(Math.random() * students.length)];
+        const screen = document.getElementById('screenText');
+        screen.textContent = final.name;
+        
+        setTimeout(() => showResultModal(final), 600);
+    }
+
+    function showResultModal(student) {
+        currentStudent = student;
+        document.getElementById('resultName').textContent = student.name;
+        document.getElementById('resultGroup').textContent = student.group_name || '未分小组';
+        document.getElementById('resultModal').style.display = 'flex';
+    }
+
+    function closeResultModal() {
+        document.getElementById('resultModal').style.display = 'none';
+    }
+
+    async function submitResult(points, reason) {
+        if(!currentStudent) return;
+        try {
+            await fetch(`/api/students/${currentStudent.id}/points`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    change_amount: points,
+                    reason: '随机点名: ' + reason,
+                    teacher: '班主任'
+                })
+            });
+        } catch(e) { console.error(e); }
+        closeResultModal();
+    }
+</script>
+{% endblock %}

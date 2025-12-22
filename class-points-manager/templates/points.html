@@ -425,6 +425,9 @@
             </select>
             <i class="fas fa-chevron-down class-select-icon"></i>
         </div>
+        <button class="btn btn-warning" onclick="openQuickCheckInModal()" style="margin-right: 10px; background-color: #ed8936; border-color: #ed8936; color: white;">
+            <i class="fas fa-bolt"></i> 快速打卡
+        </button>
         <button class="btn btn-primary" onclick="openBatchModal()">
             <i class="fas fa-layer-group"></i> 批量调整
         </button>
@@ -531,6 +534,60 @@
                 <button class="btn btn-primary" style="width: 100%; margin-top: auto;" onclick="submitBatch()">
                     <i class="fas fa-check"></i> 确认提交
                 </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 快速打卡模态框 -->
+<div id="quickCheckInModal" class="modal">
+    <div class="modal-content" style="max-width: 900px; width: 90%;">
+        <div class="modal-header" style="background: linear-gradient(135deg, #f6ad55 0%, #ed8936 100%); color: white;">
+            <h2 style="color: white; margin: 0;"><i class="fas fa-bolt"></i> 快速打卡通道</h2>
+            <span class="close" onclick="closeModal('quickCheckInModal')" style="color: white; opacity: 0.8;">&times;</span>
+        </div>
+        <div class="modal-body batch-modal-body">
+            <!-- 左侧：快捷项目 -->
+            <div class="operation-panel" style="width: 260px; background: white; border: 1px solid #e2e8f0; padding: 0; overflow: hidden; display: flex; flex-direction: column;">
+                <div class="op-header" style="background: #fffaf0; padding: 15px; margin: 0; border-bottom: 1px solid #fbd38d; color: #c05621;">
+                    <i class="fas fa-list-ul"></i> 1. 选择打卡项目
+                </div>
+                <div id="quickActionsGrid" style="padding: 15px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 10px;">
+                    <!-- 动态生成 -->
+                </div>
+            </div>
+
+            <!-- 右侧：学生选择 -->
+            <div class="selector-panel" style="flex: 1; border: 1px solid #e2e8f0;">
+                <div class="selector-header" style="background: #fffaf0; border-bottom: 1px solid #fbd38d;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <span style="font-weight: 600; color: #c05621;"><i class="fas fa-users"></i> 2. 确认名单</span>
+                        <div class="selector-tabs" style="margin: 0;">
+                             <button class="tab-btn active" onclick="switchQuickTab('students')">按学生</button>
+                             <button class="tab-btn" onclick="switchQuickTab('groups')">按小组</button>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" class="selector-search" id="quickModalSearch" placeholder="搜索姓名..." oninput="filterQuickList()">
+                        <button class="btn btn-sm" onclick="toggleQuickSelectAll()" style="background: #feebc8; color: #c05621; border: none; padding: 0 10px; border-radius: 6px;">全选/反选</button>
+                    </div>
+                </div>
+                <div class="selector-content" id="quickSelectorList" style="background: white;">
+                    <!-- 动态加载列表 -->
+                </div>
+                <div style="padding: 15px; border-top: 1px solid #e2e8f0; background: #fffaf0; display: flex; align-items: center; gap: 15px;">
+                    <div style="white-space: nowrap;">
+                        已选 <span id="quickSelectedCount" style="font-weight: bold; color: #ed8936; font-size: 18px;">0</span> 人
+                    </div>
+                    
+                    <div id="quickActionSummary" style="flex: 1;">
+                        <!-- JS 动态填入输入框 -->
+                    </div>
+
+                    <button class="btn" onclick="submitQuickBatch()" style="background-color: #ed8936; color: white; padding: 8px 20px; border: none; border-radius: 8px; font-weight: bold; white-space: nowrap; box-shadow: 0 2px 5px rgba(237, 137, 54, 0.3);">
+                        <i class="fas fa-check"></i> 确认
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -970,6 +1027,272 @@
                 alert('操作成功: ' + data.message);
                 closeModal('batchModal');
                 loadData(); // 刷新数据
+            } else {
+                alert('操作失败: ' + data.error);
+            }
+        } catch (e) {
+            console.error(e);
+            alert('网络错误');
+        }
+    }
+    // ============ 快速打卡逻辑 (更新版) ============
+    
+    // 预设打卡项目配置
+    const quickActions = [
+        { id: 'homework', icon: '📚', name: '作业优秀', points: 2, reason: '作业完成优秀', defaultSelect: 'all' },
+        { id: 'homework_late', icon: '🐢', name: '补交作业', points: 1, reason: '补交作业', defaultSelect: 'none' },
+        { id: 'answer', icon: '🙋‍♂️', name: '积极回答', points: 1, reason: '课堂积极回答问题', defaultSelect: 'none' },
+        { id: 'discipline', icon: '🤐', name: '纪律标兵', points: 1, reason: '课堂纪律表现好', defaultSelect: 'all' },
+        { id: 'cleaning', icon: '🧹', name: '卫生值日', points: 2, reason: '认真负责卫生值日', defaultSelect: 'none' },
+        { id: 'exercise', icon: '🏃‍♂️', name: '跑操全勤', points: 1, reason: '跑操出勤', defaultSelect: 'all' },
+        { id: 'late', icon: '❌', name: '迟到', points: -2, reason: '上课/集会迟到', defaultSelect: 'none' },
+        { id: 'talk', icon: '🗣️', name: '闲聊/走神', points: -1, reason: '课堂讲话或走神', defaultSelect: 'none' },
+        { id: 'custom', icon: '✨', name: '自定义', points: 1, reason: '', defaultSelect: 'none' }
+    ];
+
+    let currentQuickAction = null;
+    let quickSelectedIds = new Set();
+    let quickTab = 'students';
+
+    function openQuickCheckInModal() {
+        document.getElementById('quickCheckInModal').style.display = 'block';
+        renderQuickActions();
+        // 默认选中第一个
+        if (quickActions.length > 0) {
+            selectQuickAction(quickActions[0].id);
+        }
+    }
+
+    function renderQuickActions() {
+        const container = document.getElementById('quickActionsGrid');
+        container.innerHTML = '';
+        quickActions.forEach(action => {
+            const div = document.createElement('div');
+            // 样式处理
+            div.style.padding = '12px';
+            div.style.border = '1px solid #e2e8f0';
+            div.style.borderRadius = '8px';
+            div.style.cursor = 'pointer';
+            div.style.display = 'flex';
+            div.style.alignItems = 'center';
+            div.style.transition = 'all 0.2s';
+            div.id = `action-btn-${action.id}`;
+            
+            // 颜色区分
+            let color = '#4a5568';
+            let bgHover = '#f7fafc';
+            if (action.id !== 'custom') {
+                 color = action.points > 0 ? '#48bb78' : '#f56565';
+                 bgHover = action.points > 0 ? '#f0fff4' : '#fff5f5';
+            }
+            
+            div.innerHTML = `
+                <span style="font-size: 24px; margin-right: 12px;">${action.icon}</span>
+                <div style="flex: 1;">
+                    <div style="font-weight: 600; color: #2d3748;">${action.name}</div>
+                    <div style="font-size: 12px; color: ${color}; font-weight: bold;">
+                        ${action.id === 'custom' ? '手动输入' : (action.points > 0 ? '+' : '') + action.points + ' 分'}
+                    </div>
+                </div>
+                <i class="fas fa-check-circle check-mark" style="color: #ed8936; display: none;"></i>
+            `;
+            
+            div.onclick = () => selectQuickAction(action.id);
+            div.onmouseover = () => { if(currentQuickAction?.id !== action.id) div.style.background = bgHover; };
+            div.onmouseout = () => { if(currentQuickAction?.id !== action.id) div.style.background = 'white'; };
+            
+            container.appendChild(div);
+        });
+    }
+
+    function selectQuickAction(id) {
+        currentQuickAction = quickActions.find(a => a.id === id);
+        
+        // 更新左侧样式
+        document.querySelectorAll('#quickActionsGrid > div').forEach(d => {
+            d.style.background = 'white';
+            d.style.borderColor = '#e2e8f0';
+            d.querySelector('.check-mark').style.display = 'none';
+        });
+        
+        const activeBtn = document.getElementById(`action-btn-${id}`);
+        activeBtn.style.background = '#fffaf0'; 
+        activeBtn.style.borderColor = '#ed8936';
+        activeBtn.querySelector('.check-mark').style.display = 'block';
+
+        // 更新底部：美化后的输入框
+        const summaryContainer = document.getElementById('quickActionSummary');
+        const color = currentQuickAction.points >= 0 ? '#48bb78' : '#f56565';
+        
+        summaryContainer.innerHTML = `
+            <div style="display:flex; align-items:center; gap:10px; width: 100%;">
+                <!-- 分值 -->
+                <div style="position: relative; width: 90px;" title="调整分值">
+                    <i class="fas fa-sort-numeric-up" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); color:#cbd5e0; font-size:12px;"></i>
+                    <input type="number" id="quickOpPoints" value="${currentQuickAction.points}" 
+                           oninput="this.style.color = this.value >= 0 ? '#48bb78' : '#f56565'; this.style.borderColor = this.value >= 0 ? '#48bb78' : '#f56565'"
+                           style="width:100%; padding:8px 8px 8px 28px; border:2px solid ${color}; border-radius:8px; 
+                                  font-weight:bold; font-size:15px; color:${color}; outline:none; text-align:center; background:white; transition: all 0.2s;">
+                </div>
+
+                <!-- 理由 -->
+                <div style="position: relative; flex: 1;">
+                    <i class="fas fa-comment-alt" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#cbd5e0; font-size:12px;"></i>
+                    <input type="text" id="quickOpReason" value="${currentQuickAction.reason}" placeholder="请输入变动理由..." 
+                           style="width:100%; padding:8px 12px 8px 34px; border:1px solid #e2e8f0; border-radius:8px; 
+                                  font-size:14px; outline:none; color:#4a5568; background:white; transition: all 0.2s;"
+                           onfocus="this.style.borderColor='#ed8936'; this.style.boxShadow='0 0 0 3px rgba(237, 137, 54, 0.1)'"
+                           onblur="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'">
+                </div>
+            </div>
+        `;
+
+        // 重置选人逻辑
+        quickSelectedIds.clear();
+        if (currentQuickAction.defaultSelect === 'all') {
+            allStudents.forEach(s => quickSelectedIds.add(s.id));
+        }
+        
+        renderQuickSelectorList();
+        updateQuickSelectedCount();
+    }
+    
+    function switchQuickTab(tab) {
+        quickTab = tab;
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelector(`.tab-btn[onclick="switchQuickTab('${tab}')"]`).classList.add('active');
+        renderQuickSelectorList();
+    }
+
+    function renderQuickSelectorList() {
+        const container = document.getElementById('quickSelectorList');
+        const term = document.getElementById('quickModalSearch').value.toLowerCase();
+        container.innerHTML = '';
+
+        if (quickTab === 'students') {
+            allStudents.forEach(s => {
+                if (s.name.toLowerCase().includes(term) || s.student_id.toLowerCase().includes(term)) {
+                    const div = document.createElement('div');
+                    div.className = 'select-item';
+                    div.innerHTML = `
+                        <input type="checkbox" onchange="toggleQuickSelect(${s.id}, this.checked)" 
+                               ${quickSelectedIds.has(s.id) ? 'checked' : ''}>
+                        <div style="flex:1;">${s.name} <span style="color:#a0aec0;font-size:12px;">${s.student_id}</span></div>
+                    `;
+                    container.appendChild(div);
+                }
+            });
+        } else {
+            allGroups.forEach(g => {
+                if (g.name.toLowerCase().includes(term)) {
+                    const groupStudents = allStudents.filter(s => s.group_id === g.id);
+                    const isAllSelected = groupStudents.length > 0 && groupStudents.every(s => quickSelectedIds.has(s.id));
+                    
+                    const div = document.createElement('div');
+                    div.className = 'select-item';
+                    div.innerHTML = `
+                        <input type="checkbox" onchange="toggleQuickGroupSelect(${g.id}, this.checked)" 
+                               ${isAllSelected ? 'checked' : ''}>
+                        <div style="flex:1; display:flex; align-items:center;">
+                            <span style="width:10px;height:10px;border-radius:50%;background:${g.color};margin-right:8px;"></span>
+                            ${g.name} 
+                            <span style="color:#a0aec0;font-size:12px;margin-left:5px;">(${groupStudents.length}人)</span>
+                        </div>
+                    `;
+                    container.appendChild(div);
+                }
+            });
+        }
+    }
+
+    function filterQuickList() { renderQuickSelectorList(); }
+
+    function toggleQuickSelect(id, checked) {
+        if(checked) quickSelectedIds.add(id);
+        else quickSelectedIds.delete(id);
+        updateQuickSelectedCount();
+    }
+
+    function toggleQuickGroupSelect(groupId, checked) {
+        const groupStudents = allStudents.filter(s => groupId === s.group_id);
+        groupStudents.forEach(s => {
+            if(checked) quickSelectedIds.add(s.id);
+            else quickSelectedIds.delete(s.id);
+        });
+        updateQuickSelectedCount();
+        renderQuickSelectorList();
+    }
+
+    function toggleQuickSelectAll() {
+        const term = document.getElementById('quickModalSearch').value.toLowerCase();
+        let visibleStudents = [];
+        if (quickTab === 'students') {
+            visibleStudents = allStudents.filter(s => s.name.toLowerCase().includes(term) || s.student_id.toLowerCase().includes(term));
+        } else {
+             if(quickTab === 'groups') {
+                 const visibleGroupIds = allGroups.filter(g => g.name.toLowerCase().includes(term)).map(g => g.id);
+                 visibleStudents = allStudents.filter(s => visibleGroupIds.includes(s.group_id));
+             }
+        }
+
+        const allSelected = visibleStudents.every(s => quickSelectedIds.has(s.id));
+        visibleStudents.forEach(s => {
+            if(allSelected) quickSelectedIds.delete(s.id);
+            else quickSelectedIds.add(s.id);
+        });
+        
+        renderQuickSelectorList();
+        updateQuickSelectedCount();
+    }
+
+    function updateQuickSelectedCount() {
+        document.getElementById('quickSelectedCount').textContent = quickSelectedIds.size;
+    }
+
+    async function submitQuickBatch() {
+        if (!currentQuickAction) return;
+        const ids = Array.from(quickSelectedIds);
+        if (ids.length === 0) {
+            alert('请至少选择一名学生');
+            return;
+        }
+
+        const pointsInput = document.getElementById('quickOpPoints');
+        const reasonInput = document.getElementById('quickOpReason');
+        
+        const points = parseInt(pointsInput.value);
+        const reason = reasonInput.value.trim();
+
+        if (isNaN(points) || points === 0) {
+            alert('请输入有效的数值');
+            return;
+        }
+        if (!reason) {
+            alert('请输入理由');
+            return;
+        }
+
+        if(!confirm(`确认给 ${ids.length} 名学生打卡？\n变动：${points > 0 ? '+' : ''}${points} 分\n理由：${reason}`)) {
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/students/batch/points', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    student_ids: ids,
+                    change_amount: points,
+                    reason: reason,
+                    teacher: '班主任'
+                })
+            });
+            
+            const data = await res.json();
+            if (res.ok) {
+                alert('打卡成功！');
+                closeModal('quickCheckInModal');
+                loadData(); 
             } else {
                 alert('操作失败: ' + data.error);
             }

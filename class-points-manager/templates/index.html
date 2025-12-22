@@ -54,10 +54,99 @@
 <div class="dashboard">
     <div class="dashboard-header">
         <h1><i class="fas fa-tachometer-alt"></i> 控制面板</h1>
-        <button class="btn btn-primary" onclick="showClassModal()">
-            <i class="fas fa-plus"></i> 创建新班级
-        </button>
+        <div style="display: flex; gap: 10px;">
+            <button class="btn btn-danger" onclick="startDeleteProcess()" style="background: #ef4444; color: white;">
+                <i class="fas fa-trash-alt"></i> 卸载旧班级
+            </button>
+            <button class="btn btn-primary" onclick="showClassModal()">
+                <i class="fas fa-plus"></i> 创建新班级
+            </button>
+        </div>
     </div>
+
+    <!-- 卸载班级密码验证模态框 -->
+    <div id="deleteAuthModal" class="modal" style="z-index: 1100;">
+        <div class="modal-content" style="max-width: 350px; border-radius: 16px;">
+            <div class="modal-header" style="background: #ef4444; color: white;">
+                <h2 style="color: white; margin: 0;"><i class="fas fa-shield-alt"></i> 权限验证</h2>
+                <span class="close" onclick="closeModal('deleteAuthModal')" style="color: white;">&times;</span>
+            </div>
+            <div class="modal-body" style="padding: 25px;">
+                <p style="margin-bottom: 15px; font-weight: 600; color: #4b5563;">请输入管理密码以执行删除操作：</p>
+                <input type="password" id="deletePasswordInput" class="form-control" style="font-size: 20px; text-align: center; letter-spacing: 4px; border: 2px solid #ef4444;" placeholder="••••••">
+                <div id="deletePwdError" style="color: #ef4444; font-size: 13px; margin-top: 8px; display: none;">密码错误，拒绝访问</div>
+                <button class="btn btn-danger" onclick="verifyDeletePassword()" style="width: 100%; margin-top: 20px; background: #ef4444;">确认身份</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 卸载班级选择模态框 -->
+    <div id="classDeleteModal" class="modal" style="z-index: 1101;">
+        <!-- ... 原有的内容 ... -->
+        <div class="modal-content" style="max-width: 450px; border-radius: 16px;">
+            <div class="modal-header" style="background: #ef4444; color: white;">
+                <h2 style="color: white; margin: 0;"><i class="fas fa-exclamation-triangle"></i> 彻底卸载班级</h2>
+                <span class="close" onclick="closeModal('classDeleteModal')" style="color: white;">&times;</span>
+            </div>
+            <div class="modal-body" style="padding: 25px;">
+                <div style="background: #fef2f2; padding: 15px; border-radius: 12px; border: 1px solid #fee2e2; margin-bottom: 20px;">
+                    <p style="color: #b91c1c; margin: 0; font-size: 14px; line-height: 1.5;">
+                        <strong>警告：</strong> 此操作将永久删除该班级的所有<strong>学生、积分历史、小组记录及老师评语</strong>。数据一旦删除无法恢复！
+                    </p>
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600;">请选择要卸载的班级：</label>
+                    <select id="deleteClassSelect" class="form-control" style="margin-top: 10px; height: 45px; border: 2px solid #e5e7eb;">
+                        <option value="">请选择班级...</option>
+                    </select>
+                </div>
+                <button class="btn btn-danger" onclick="executeDeleteClass()" style="width: 100%; margin-top: 20px; padding: 12px; font-weight: bold; background: #ef4444;">
+                    <i class="fas fa-fire"></i> 立即彻底清除
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 告别纪念弹窗 -->
+    <div id="farewellModal" class="modal" style="z-index: 2000; background: rgba(255,255,255,0.9);">
+        <div class="modal-content" style="max-width: 600px; border: none; background: transparent; box-shadow: none; margin-top: 15vh;">
+            <div style="background: white; border-radius: 30px; padding: 60px 40px; text-align: center; box-shadow: 0 30px 60px rgba(0,0,0,0.1); border: 1px solid #eef2ff; position: relative; overflow: hidden;">
+                <!-- 装饰性元素 -->
+                <div style="position: absolute; top: -50px; left: -50px; width: 150px; height: 150px; background: #eef2ff; border-radius: 50%; opacity: 0.5;"></div>
+                <div style="position: absolute; bottom: -30px; right: -30px; width: 100px; height: 100px; background: #fff7ed; border-radius: 50%; opacity: 0.5;"></div>
+                
+                <div style="font-size: 4rem; color: #6366f1; margin-bottom: 30px; animation: heartBeat 2s infinite;">
+                    <i class="fas fa-heart"></i>
+                </div>
+                
+                <h2 style="font-size: 1.8rem; color: #1e293b; margin-bottom: 25px; line-height: 1.6; font-weight: 800;">
+                    同学们前程似锦，未来一帆风顺。<br>永远铭记我们的 <span id="farewellClassName" style="color: #6366f1; border-bottom: 3px solid #c7d2fe;"></span>
+                </h2>
+
+                <div style="background: #fff5f5; padding: 20px; border-radius: 16px; color: #e53e3e; font-weight: 600; margin-bottom: 30px; border: 1px dashed #feb2b2; line-height: 1.8; position: relative;">
+                    <i class="fas fa-hands-clapping" style="font-size: 1.5rem; margin-bottom: 10px; display: block;"></i>
+                    感谢班主任与各科老师一年的辛勤付出，<br>
+                    大家一起给他们鼓个掌吧！👏
+                </div>
+                
+                <p style="color: #64748b; font-size: 1.1rem; margin-bottom: 40px;">毕业不是终点，而是新征程的起点。</p>
+                
+                <button class="btn btn-primary" onclick="location.reload()" style="padding: 15px 50px; border-radius: 50px; font-size: 1.1rem; font-weight: 700; background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); border: none; box-shadow: 0 10px 20px rgba(79, 70, 229, 0.3);">
+                    珍藏回忆，继续出发
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        @keyframes heartBeat {
+            0% { transform: scale(1); }
+            14% { transform: scale(1.1); }
+            28% { transform: scale(1); }
+            42% { transform: scale(1.1); }
+            70% { transform: scale(1); }
+        }
+    </style>
 
     <!-- 确保这个元素存在 -->
     <div class="class-selector">
@@ -205,6 +294,83 @@ if (typeof showClassModal === 'undefined') {
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     loadClasses();
+});
+
+// --- 删除班级流程逻辑 ---
+
+function startDeleteProcess() {
+    document.getElementById('deleteAuthModal').style.display = 'block';
+    document.getElementById('deletePasswordInput').value = '';
+    document.getElementById('deletePwdError').style.display = 'none';
+    setTimeout(() => document.getElementById('deletePasswordInput').focus(), 100);
+}
+
+function closeModal(id) {
+    document.getElementById(id).style.display = 'none';
+}
+
+async function verifyDeletePassword() {
+    const pwd = document.getElementById('deletePasswordInput').value;
+    if(!pwd) return;
+
+    try {
+        const res = await fetch('/api/verify_password', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ password: pwd })
+        });
+        
+        if (res.ok) {
+            closeModal('deleteAuthModal');
+            document.getElementById('classDeleteModal').style.display = 'block';
+            loadClasses(); // 确保下拉框有数据
+        } else {
+            document.getElementById('deletePwdError').style.display = 'block';
+            document.getElementById('deletePasswordInput').value = '';
+            document.getElementById('deletePasswordInput').focus();
+        }
+    } catch (e) {
+        alert('验证出错');
+    }
+}
+
+async function executeDeleteClass() {
+    const classSelect = document.getElementById('deleteClassSelect');
+    const classId = classSelect.value;
+    if (!classId) {
+        alert('请选择要删除的班级');
+        return;
+    }
+
+    const className = classSelect.options[classSelect.selectedIndex].text;
+    
+    if(!confirm(`此操作将物理删除【${className}】的所有数据（学生、积分、评语等）且不可撤销。\n\n您确定要继续吗？`)) {
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/classes/${classId}`, {
+            method: 'DELETE'
+        });
+        
+        if (res.ok) {
+            // 隐藏删除框
+            closeModal('classDeleteModal');
+            // 显示告别弹窗
+            document.getElementById('farewellClassName').textContent = className;
+            document.getElementById('farewellModal').style.display = 'block';
+        } else {
+            const data = await res.json();
+            alert('删除失败: ' + data.error);
+        }
+    } catch (e) {
+        alert('网络请求失败');
+    }
+}
+
+// 绑定回车键验证密码
+document.getElementById('deletePasswordInput')?.addEventListener('keypress', (e) => {
+    if(e.key === 'Enter') verifyDeletePassword();
 });
 </script>
 {% endblock %}
