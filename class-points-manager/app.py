@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request, send_file, make_response
+from flask import Flask, render_template, jsonify, request, send_file, make_response, session, redirect, url_for
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 import sqlite3
@@ -16,17 +16,63 @@ import webbrowser
 from config import Config
 
 class Config:
-    SECRET_KEY = os.environ.get('SECRET_KEY') or 'your-secret-key-here-change-in-production'
+    SECRET_KEY = os.environ.get('SECRET_KEY') or 'class-points-manager-secret-2025'
     DATABASE_PATH = os.path.join(os.path.dirname(__file__), 'data', 'class_points.db')
     UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'static', 'uploads')
     DEBUG = True
 
 app = Flask(__name__)
 app.config.from_object(Config)
+app.secret_key = 'cp-manager-secure-key' # 显式设置以便 session 工作
 CORS(app)  # 允许跨域请求
 
 # 确保上传目录存在
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+def get_system_password():
+    """从本地文件读取系统密码"""
+    password_file = os.path.join(os.path.dirname(__file__), 'password.txt')
+    if not os.path.exists(password_file):
+        with open(password_file, 'w', encoding='utf-8') as f:
+            f.write('123456')
+        return '123456'
+    with open(password_file, 'r', encoding='utf-8') as f:
+        return f.read().strip()
+
+@app.before_request
+def check_auth():
+    """全局登录检查"""
+    allowed_paths = ['/login', '/static', '/api/verify_password']
+    if any(request.path.startswith(path) for path in allowed_paths):
+        return
+    if 'logged_in' not in session:
+        return redirect(url_for('login_page'))
+
+@app.route('/login', methods=['GET', 'POST'])
+def login_page():
+    """登录页面及处理"""
+    if request.method == 'POST':
+        data = request.json
+        input_pwd = str(data.get('password', '')).strip()
+        if input_pwd == get_system_password():
+            session['logged_in'] = True
+            return jsonify({'success': True})
+        return jsonify({'success': False, 'error': '密码错误'}), 403
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.pop('logged_in', None)
+    return redirect(url_for('login_page'))
+
+@app.route('/api/verify_password', methods=['POST'])
+def verify_password_api():
+    """专门供AJAX调用的验证接口"""
+    data = request.json
+    input_pwd = str(data.get('password', '')).strip()
+    if input_pwd == get_system_password():
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'error': '密码错误'}), 403
 
 # 数据库初始化
 def init_db():
@@ -140,6 +186,18 @@ def init_db():
             FOREIGN KEY (reward_id) REFERENCES rewards (id)
         )
         ''')
+
+        # 创建家校评价表
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS student_evaluations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            content TEXT,
+            period TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (student_id) REFERENCES students (id)
+        )
+        ''')
         
         conn.commit()
         print("数据库表创建成功")
@@ -211,6 +269,104 @@ def check_and_init_tables():
 def index():
     """首页"""
     return render_template('index.html')
+
+@app.route('/random')
+def random_page():
+    """随机点名页面"""
+    return render_template('random.html')
+
+@app.route('/report')
+def report_page():
+    """家校合作/报告页面"""
+    return render_template('report.html')
+
+@app.route('/api/students/<int:student_id>/evaluation', methods=['GET', 'POST'])
+def handle_evaluation(student_id):
+    """获取或保存学生评价"""
+    conn = get_db_connection()
+    if request.method == 'POST':
+        data = request.json
+        content = data.get('content')
+        period = data.get('period', datetime.now().strftime('%Y-%m'))
+        
+        conn.execute('''
+            INSERT INTO student_evaluations (student_id, content, period)
+            VALUES (?, ?, ?)
+        ''', (student_id, content, period))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    
+    # GET
+    evals = conn.execute('''
+        SELECT * FROM student_evaluations 
+        WHERE student_id = ? 
+        ORDER BY created_at DESC
+    ''', (student_id,)).fetchall()
+    conn.close()
+    return jsonify([dict(e) for e in evals])
+
+@app.route('/api/classes/<int:class_id>/export_report')
+def export_class_report(class_id):
+    """导出班级周报Excel"""
+    conn = get_db_connection()
+    students = conn.execute('''
+        SELECT s.name, s.student_id, s.points, g.name as group_name,
+               (SELECT content FROM student_evaluations WHERE student_id = s.id ORDER BY created_at DESC LIMIT 1) as last_eval
+        FROM students s
+        LEFT JOIN groups g ON s.group_id = g.id
+        WHERE s.class_id = ?
+        ORDER BY s.points DESC
+    ''', (class_id,)).fetchall()
+    
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "班级学情报告"
+    
+    # 表头
+    headers = ["排名", "姓名", "学号", "所属小组", "当前总积分", "老师评价"]
+    ws.append(headers)
+    
+    for i, s in enumerate(students):
+        ws.append([i+1, s['name'], s['student_id'], s['group_name'] or "-", s['points'], s['last_eval'] or "暂无评价"])
+    
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    conn.close()
+    
+    filename = f"class_report_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    return send_file(output, as_attachment=True, download_name=filename)
+
+@app.route('/api/classes/<int:class_id>', methods=['DELETE'])
+def delete_class(class_id):
+    """彻底删除班级及其所有关联数据"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 1. 删除关联的评价
+        cursor.execute('DELETE FROM student_evaluations WHERE student_id IN (SELECT id FROM students WHERE class_id = ?)', (class_id,))
+        # 2. 删除关联的积分历史
+        cursor.execute('DELETE FROM points_history WHERE student_id IN (SELECT id FROM students WHERE class_id = ?)', (class_id,))
+        # 3. 删除关联的小组积分历史
+        cursor.execute('DELETE FROM group_points_history WHERE group_id IN (SELECT id FROM groups WHERE class_id = ?)', (class_id,))
+        # 4. 删除兑换记录
+        cursor.execute('DELETE FROM redemptions WHERE student_id IN (SELECT id FROM students WHERE class_id = ?)', (class_id,))
+        cursor.execute('DELETE FROM group_redemptions WHERE group_id IN (SELECT id FROM groups WHERE class_id = ?)', (class_id,))
+        # 5. 删除学生
+        cursor.execute('DELETE FROM students WHERE class_id = ?', (class_id,))
+        # 6. 删除小组
+        cursor.execute('DELETE FROM groups WHERE class_id = ?', (class_id,))
+        # 7. 最后删除班级本身
+        cursor.execute('DELETE FROM classes WHERE id = ?', (class_id,))
+        
+        conn.commit()
+        conn.close()
+        return jsonify({'message': '班级及关联数据已彻底清除'}), 200
+    except Exception as e:
+        print(f"删除班级失败: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/classes', methods=['GET'])
 def get_classes():
