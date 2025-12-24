@@ -132,6 +132,7 @@ async function loadClasses() {
         // 检查元素是否存在再更新
         const selectors = [
             'class-select',
+            'classSelect', // 新增：适配 report.html
             'student-class-select', 
             'points-class-select',
             'ranking-class-select',
@@ -240,9 +241,10 @@ async function loadClassData() {
         const stats = await response.json();
         
         // 更新班级信息
-        document.getElementById('class-name').textContent = 
-            document.querySelector(`#class-select option[value="${classId}"]`).textContent;
-        document.getElementById('class-teacher').textContent = '班主任';
+        const classOption = document.querySelector(`#class-select option[value="${classId}"]`);
+        document.getElementById('class-name').textContent = classOption ? classOption.textContent : '未知班级';
+        document.getElementById('class-teacher').textContent = stats.class_info.teacher || '班主任';
+        document.getElementById('class-created').textContent = formatDate(stats.class_info.created_at).split(' ')[0]; // 只显示日期
         
         // 更新统计数据
         document.getElementById('total-students').textContent = stats.total_students;
@@ -250,33 +252,77 @@ async function loadClassData() {
         document.getElementById('max-points').textContent = stats.max_points;
         document.getElementById('min-points').textContent = stats.min_points;
         
-        // 更新最近活动
-        const recentChanges = document.getElementById('recent-changes');
-        recentChanges.innerHTML = '';
+        // === 更新最近活动 (带滚动特效) ===
+        const recentChangesContainer = document.getElementById('recent-changes');
+        recentChangesContainer.innerHTML = '';
         
-        stats.recent_changes.forEach(change => {
-            const item = document.createElement('div');
-            item.className = 'activity-item';
+        // 创建滚动轨道
+        const track = document.createElement('div');
+        track.className = 'activity-track';
+        
+        // 数据源（如果少于5条就不滚动，不用复制）
+        let displayData = stats.recent_changes;
+        const shouldScroll = displayData.length > 5;
+        
+        if (shouldScroll) {
+            // 复制一份数据实现无缝滚动
+            displayData = [...displayData, ...displayData];
+            track.classList.add('scrolling');
             
-            const changeType = change.change_amount > 0 ? 'add' : 'subtract';
-            const iconClass = changeType === 'add' ? 'fa-plus-circle' : 'fa-minus-circle';
-            const bgColor = changeType === 'add' ? '#48bb78' : '#f56565';
+            // 动态设置动画时长，根据数据量调整速度 (每条2秒)
+            track.style.animationDuration = `${displayData.length * 1.5}s`; 
+        }
+
+        if (displayData.length === 0) {
+            recentChangesContainer.innerHTML = '<div style="text-align:center;color:#cbd5e0;padding:20px;">暂无活动</div>';
+        } else {
+            displayData.forEach(change => {
+                const item = document.createElement('div');
+                item.className = 'activity-item';
+                
+                const changeType = change.change_amount > 0 ? 'add' : 'subtract';
+                const iconClass = changeType === 'add' ? 'fa-plus' : 'fa-minus';
+                const bgColor = changeType === 'add' ? '#48bb78' : '#f56565';
+                
+                // 简单的时间格式化
+                let timeStr = '刚刚';
+                if (change.created_at) {
+                    const date = new Date(change.created_at);
+                    const now = new Date();
+                    const isToday = date.toDateString() === now.toDateString();
+                    
+                    const hours = date.getHours().toString().padStart(2, '0');
+                    const minutes = date.getMinutes().toString().padStart(2, '0');
+                    
+                    if (isToday) {
+                        timeStr = `今天 ${hours}:${minutes}`;
+                    } else {
+                        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                        const day = date.getDate().toString().padStart(2, '0');
+                        timeStr = `${month}-${day} ${hours}:${minutes}`;
+                    }
+                }
+                
+                item.innerHTML = `
+                    <div class="activity-icon" style="background-color: ${bgColor};">
+                        <i class="fas ${iconClass}"></i>
+                    </div>
+                    <div class="activity-details">
+                        <h4>
+                            <span>${change.student_name}</span>
+                            <span class="activity-time">${timeStr}</span>
+                        </h4>
+                        <p>${change.reason || '无理由'}</p>
+                    </div>
+                    <div class="activity-points" style="color: ${bgColor};">
+                        ${change.change_amount > 0 ? '+' : ''}${change.change_amount}
+                    </div>
+                `;
+                track.appendChild(item);
+            });
             
-            item.innerHTML = `
-                <div class="activity-icon" style="background-color: ${bgColor};">
-                    <i class="fas ${iconClass}"></i>
-                </div>
-                <div class="activity-details">
-                    <h4>${change.student_name}</h4>
-                    <p>${change.reason}</p>
-                </div>
-                <div class="activity-points" style="color: ${bgColor};">
-                    ${change.change_amount > 0 ? '+' : ''}${change.change_amount}
-                </div>
-            `;
-            
-            recentChanges.appendChild(item);
-        });
+            recentChangesContainer.appendChild(track);
+        }
         
         document.getElementById('class-info').style.display = 'block';
         
