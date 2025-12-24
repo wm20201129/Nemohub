@@ -7,6 +7,69 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        /* === 全局自适应补丁 === */
+        html, body { overflow-x: hidden; width: 100%; position: relative; }
+        .container { width: 100%; max-width: 1200px; padding: 15px; box-sizing: border-box; }
+
+        @media (max-width: 768px) {
+            .navbar { 
+                background: #ffffff !important; 
+                padding: 12px 0; 
+                height: auto !important; 
+                border-bottom: 1px solid #edf2f7;
+            }
+            .nav-container { 
+                padding: 0 20px; 
+                flex-wrap: wrap; 
+                height: auto !important; 
+                justify-content: space-between !important;
+            }
+            .nav-brand { color: #6366f1 !important; margin: 0; }
+            .nav-brand i { color: #6366f1; }
+            .nav-brand span { display: inline-block; font-size: 16px; } 
+            
+            .nav-user { 
+                margin: 0 !important; 
+                background: #f8fafc !important; 
+                color: #64748b !important; 
+                padding: 5px 12px !important; 
+                border-radius: 12px !important;
+                font-size: 12px;
+            }
+            .nav-user a { color: #94a3b8 !important; margin-left: 5px; }
+
+            .nav-menu { 
+                order: 3; width: 100%; display: flex; 
+                overflow-x: auto; white-space: nowrap; 
+                margin: 15px -20px -12px -20px; 
+                padding: 10px 20px;
+                gap: 10px;
+                background: #fcfcfc;
+                border-top: 1px solid #f1f5f9;
+                scrollbar-width: none;
+                -webkit-overflow-scrolling: touch;
+            }
+            .nav-menu::-webkit-scrollbar { display: none; }
+            
+            .nav-link { 
+                color: #64748b !important; 
+                padding: 8px 16px; 
+                font-size: 13px; 
+                background: white; 
+                border: 1px solid #e2e8f0;
+                border-radius: 10px !important;
+                font-weight: 600;
+            }
+            .nav-link i { font-size: 14px; margin-right: 4px; }
+            .nav-link.active { 
+                background: #6366f1 !important; 
+                color: white !important; 
+                border-color: #6366f1;
+                box-shadow: 0 4px 10px rgba(99, 102, 241, 0.2);
+            }
+        }
+    </style>
 </head>
 <body>
     <nav class="navbar">
@@ -38,9 +101,14 @@
                     <i class="fas fa-star"></i> 家校合作
                 </a>
             </div>
-            <div class="nav-user">
-                <i class="fas fa-user-circle"></i>
-                <span id="current-teacher">班主任</span>
+            <div class="nav-user" style="display: flex; align-items: center; gap: 15px;">
+                <div>
+                    <i class="fas fa-user-circle"></i>
+                    <span id="current-teacher">班主任</span>
+                </div>
+                <a href="/logout" style="color: #cbd5e0; text-decoration: none; font-size: 1.1rem; transition: color 0.2s;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='#cbd5e0'" title="退出登录">
+                    <i class="fas fa-sign-out-alt"></i>
+                </a>
             </div>
         </div>
     </nav>

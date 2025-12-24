@@ -35,6 +35,14 @@
         }
         .login-btn:hover { background: #5a67d8; transform: translateY(-2px); }
         .error-hint { color: #e53e3e; font-size: 0.85rem; margin-top: 10px; display: none; }
+
+        /* 手机端隐藏所有隧道控制逻辑，只保留纯净登录 */
+        @media (max-width: 768px) {
+            #tunnelContainer { display: none !important; }
+            .login-card { padding: 30px 20px; width: 95%; }
+            .logo-area i { font-size: 2.5rem; }
+            .logo-area h1 { font-size: 1.3rem; }
+        }
     </style>
 </head>
 <body>
@@ -49,10 +57,132 @@
             <input type="password" id="password" placeholder="请输入密码..." autofocus>
         </div>
         <button class="login-btn" onclick="handleLogin()">进入系统</button>
+        
+        <!-- 在线模式切换 (仅在电脑端显示) -->
+        <div id="tunnelContainer" style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #edf2f7;">
+            <div id="tunnelArea">
+                <button onclick="toggleTunnel('start')" id="startTunnelBtn" style="background: white; border: 2px solid #667eea; color: #667eea; padding: 10px 20px; border-radius: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s;">
+                    <i class="fas fa-mobile-alt"></i> 开启移动管理通道
+                </button>
+                <p style="font-size: 12px; color: #a0aec0; margin-top: 8px;">开启后扫码，老师可在手机上评分审批</p>
+            </div>
+
+            <!-- 实时日志框 -->
+            <div id="tunnelLogBox" style="display: none; margin-top: 15px; background: #1e293b; border-radius: 12px; padding: 12px; text-align: left; font-family: monospace; font-size: 11px; line-height: 1.4; max-height: 120px; overflow-y: auto; color: #94a3b8; border: 1px solid #334155;">
+                <div id="logContent"></div>
+            </div>
+
+            <!-- 在线状态 -->
+            <div id="onlineInfo" style="display: none;">
+                <div style="background: #f0fdf4; border: 1px solid #dcfce7; border-radius: 16px; padding: 15px;">
+                    <p style="color: #16a34a; font-weight: 700; margin: 0 0 10px 0; font-size: 14px;">
+                        <i class="fas fa-check-circle"></i> 连接就绪，请扫码
+                    </p>
+                    <img id="qrCode" src="" style="width: 150px; height: 150px; background: #fff; padding: 5px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                    <p style="font-size: 11px; color: #94a3b8; margin: 8px 0; word-break: break-all;" id="onlineUrl">-</p>
+                    
+                    <p style="font-size: 11px; color: #d97706; background: #fffbeb; padding: 8px; border-radius: 8px; margin: 0;">
+                        <i class="fas fa-info-circle"></i> 微信扫码如遇白屏，请点击右上角选择<b>“在浏览器打开”</b>
+                    </p>
+                    
+                    <button onclick="toggleTunnel('stop')" style="background: none; border: none; color: #ef4444; font-size: 12px; cursor: pointer; text-decoration: underline; margin-top: 10px;">关闭在线</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 自助通道入口 -->
+        <a href="/student_portal" style="display: block; margin-top: 20px; color: #667eea; text-decoration: none; font-weight: 600; font-size: 0.95rem;">
+            <i class="fas fa-rocket"></i> 我是学生，进入自助通道 &rarr;
+        </a>
+
         <div id="errorHint" class="error-hint">密码错误，请重试</div>
     </div>
 
     <script>
+        // === 隧道管理逻辑 (Ngrok 版) ===
+        let logInterval = null;
+
+        async function toggleTunnel(action, token = '') {
+            const btn = document.getElementById('startTunnelBtn');
+            const logBox = document.getElementById('tunnelLogBox');
+            
+            if (action === 'start') {
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 正在处理...';
+                btn.disabled = true;
+                logBox.style.display = 'block'; // 显示日志框
+                startLogPolling(); // 开始拉取日志
+            }
+
+            try {
+                const res = await fetch('/api/tunnel/action', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ action: action, token: token })
+                });
+                
+                const data = await res.json();
+                
+                if (action === 'start') {
+                    if (data.success) {
+                        clearInterval(logInterval);
+                        logBox.style.display = 'none'; // 成功后隐藏
+                        showOnlineUI(data.url);
+                    } else if (data.error === 'needs_token') {
+                        clearInterval(logInterval);
+                        logBox.style.display = 'none';
+                        const userToken = prompt("请设置您的 Ngrok Authtoken：\n(您可以去 ngrok.com 注册免费账号获取)");
+                        if (userToken) {
+                            toggleTunnel('start', userToken);
+                        } else {
+                            btn.innerHTML = '<i class="fas fa-globe"></i> 开启移动管理通道';
+                            btn.disabled = false;
+                        }
+                    } else {
+                        // 发生错误不停止轮询，让用户看日志
+                        alert("启动失败: " + data.error);
+                        btn.innerHTML = '<i class="fas fa-globe"></i> 开启移动管理通道';
+                        btn.disabled = false;
+                    }
+                } else {
+                    location.reload(); 
+                }
+            } catch (e) {
+                console.error(e);
+                alert('网络错误');
+            }
+        }
+
+        function startLogPolling() {
+            if(logInterval) clearInterval(logInterval);
+            const content = document.getElementById('logContent');
+            const logBox = document.getElementById('tunnelLogBox');
+            
+            logInterval = setInterval(async () => {
+                const res = await fetch('/api/tunnel/logs');
+                const logs = await res.json();
+                
+                content.innerHTML = logs.map(l => `<div>> [${new Date().toLocaleTimeString()}] ${l}</div>`).join('');
+                logBox.scrollTop = logBox.scrollHeight; // 滚动到底部
+            }, 1000);
+        }
+
+        function showOnlineUI(url) {
+            document.getElementById('tunnelArea').style.display = 'none';
+            document.getElementById('onlineInfo').style.display = 'block';
+            document.getElementById('onlineUrl').textContent = url;
+            // 使用免费 API 生成二维码
+            document.getElementById('qrCode').src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(url)}`;
+        }
+
+        // 初始化检查状态
+        async function checkStatus() {
+            const res = await fetch('/api/tunnel/status');
+            const data = await res.json();
+            if (data.active) showOnlineUI(data.url);
+        }
+        checkStatus();
+
+        // === 原有登录逻辑 ===
         async function handleLogin() {
             const pwd = document.getElementById('password').value;
             const hint = document.getElementById('errorHint');

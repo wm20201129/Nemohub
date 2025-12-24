@@ -49,34 +49,38 @@
             margin: 2.5vh auto; /* 垂直居中 */
         }
 
-        /* 页面头部适配 */
         .page-header {
             flex-direction: column;
-            align-items: flex-start;
-            gap: 15px;
+            align-items: stretch;
+            gap: 12px;
+            padding: 15px !important;
         }
 
         .header-actions {
-            width: 100%;
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 10px;
+            gap: 8px;
         }
 
-        .header-actions .btn {
+        .header-actions .btn, .header-actions a {
             width: 100%;
             justify-content: center;
+            font-size: 13px;
+            padding: 10px 5px;
         }
         
-        /* 表格容器适配 */
         .table-container {
+            width: 100%;
             overflow-x: auto;
             -webkit-overflow-scrolling: touch;
+            border-radius: 12px;
+            margin-top: 15px;
+            background: white;
+            border: 1px solid #e2e8f0;
         }
         
-        /* 强制表格不换行，保证横向滚动体验 */
         .beautify-table {
-            min-width: 800px; 
+            min-width: 750px; 
         }
     }
 
@@ -98,6 +102,11 @@
         .header-actions {
             grid-template-columns: 1fr;
         }
+        
+        .beauty-filter-bar { padding: 10px; gap: 10px; }
+        .beauty-search-box { min-width: 100%; }
+        .beautify-table { font-size: 13px; }
+        .beautify-table th, .beautify-table td { padding: 10px 8px; }
     }
 </style>
 <div class="page-header">

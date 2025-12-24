@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学生自主申报 - 班级积分系统</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-light: #eef2ff;
+            --secondary: #ec4899;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --bg: #f8fafc;
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+        }
+        
+        body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text-main); line-height: 1.5; }
+        
+        /* 顶部导航 */
+        .header {
+            background: white; padding: 15px 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05); position: sticky; top: 0; z-index: 100;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .header h1 { margin: 0; font-size: 20px; color: var(--primary); display: flex; align-items: center; gap: 8px; }
+        
+        .btn-back {
+            text-decoration: none; color: var(--text-muted); font-size: 14px; font-weight: 600;
+            display: flex; align-items: center; gap: 5px; padding: 8px 15px; border-radius: 10px;
+            background: var(--bg); transition: all 0.2s;
+        }
+        .btn-back:hover { background: #e2e8f0; color: var(--text-main); }
+
+        .sub-header { text-align: center; padding: 30px 20px 10px; }
+        .sub-header p { color: var(--text-muted); font-size: 14px; margin: 5px 0 0; }
+        
+        /* 功能卡片区 */
+        .portal-grid {
+            display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;
+            padding: 20px; max-width: 800px; margin: 0 auto;
+        }
+        
+        .portal-card {
+            background: white; border-radius: 24px; padding: 35px 20px;
+            text-align: center; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.02); border: 2px solid transparent;
+        }
+        .portal-card:hover { transform: translateY(-5px); box-shadow: 0 12px 25px rgba(99, 102, 241, 0.1); border-color: var(--primary-light); }
+        .portal-card:active { transform: scale(0.95); }
+        
+        .card-icon {
+            width: 75px; height: 70px; border-radius: 20px; margin: 0 auto 15px;
+            display: flex; align-items: center; justify-content: center; font-size: 32px;
+        }
+        
+        .portal-card h3 { margin: 0; font-size: 18px; font-weight: 700; }
+        .portal-card p { margin: 8px 0 0; color: var(--text-muted); font-size: 13px; }
+        
+        /* 模态框 */
+        .modal {
+            display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(15, 23, 42, 0.6); z-index: 1000; padding: 20px;
+            align-items: center; justify-content: center; backdrop-filter: blur(6px);
+        }
+        .modal-content {
+            background: white; border-radius: 28px; width: 100%; max-width: 500px;
+            padding: 30px; box-shadow: 0 25px 50px rgba(0,0,0,0.2);
+            display: flex; flex-direction: column; max-height: 90vh; position: relative;
+        }
+        
+        .modal-header { text-align: center; margin-bottom: 25px; }
+        .modal-header h2 { margin: 0; font-size: 22px; color: var(--text-main); }
+        
+        /* 表单样式 */
+        .form-group { margin-bottom: 20px; }
+        .form-label { display: block; margin-bottom: 8px; font-weight: 700; color: #475569; font-size: 14px; }
+        .form-control {
+            width: 100%; padding: 12px 16px; border: 2px solid #f1f5f9; border-radius: 14px;
+            font-size: 16px; box-sizing: border-box; outline: none; transition: all 0.2s;
+            background: #f8fafc;
+        }
+        .form-control:focus { border-color: var(--primary); background: white; box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1); }
+        
+        /* Tab 切换 */
+        .tab-container {
+            display: flex; background: #f1f5f9; padding: 4px; border-radius: 12px; margin-bottom: 12px;
+        }
+        .tab-btn {
+            flex: 1; padding: 8px; border: none; border-radius: 9px; cursor: pointer;
+            font-size: 13px; font-weight: 600; color: var(--text-muted); background: transparent; transition: all 0.2s;
+        }
+        .tab-btn.active { background: white; color: var(--primary); box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
+
+        /* 选择列表 */
+        .selector-box {
+            border: 2px solid #f1f5f9; border-radius: 16px; padding: 10px;
+            max-height: 220px; overflow-y: auto; background: #fff;
+        }
+        .grid-list {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px;
+        }
+        .select-item {
+            padding: 10px 5px; text-align: center; border-radius: 10px; background: #f8fafc;
+            border: 1px solid #f1f5f9; cursor: pointer; transition: all 0.2s; font-size: 14px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .select-item.selected { background: var(--primary-light); border-color: var(--primary); color: var(--primary); font-weight: 700; }
+        
+        .group-item {
+            display: flex; align-items: center; justify-content: space-between; padding: 12px 15px;
+            margin-bottom: 8px; background: #f8fafc; border-radius: 12px; border: 1px solid #f1f5f9; cursor: pointer;
+        }
+        .group-item.selected { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
+        .group-color-dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 10px; }
+
+        .btn-submit {
+            width: 100%; padding: 16px; border: none; border-radius: 16px;
+            font-size: 16px; font-weight: 700; color: white; cursor: pointer;
+            background: var(--primary); box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+            margin-top: 10px; transition: all 0.2s;
+        }
+        .btn-submit:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4); }
+        .btn-submit:active { transform: translateY(0); }
+        
+        .close-icon { position: absolute; top: 20px; right: 20px; font-size: 20px; color: #cbd5e1; cursor: pointer; }
+
+        /* 响应式补充 */
+        @media (max-width: 480px) {
+            .portal-grid { grid-template-columns: 1fr; }
+            .portal-card { padding: 25px 15px; }
+            .modal-content { padding: 20px; border-radius: 20px; }
+            .header h1 { font-size: 18px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1><i class="fas fa-user-astronaut"></i> 自助管理</h1>
+        <a href="/login" class="btn-back">
+            <i class="fas fa-sign-out-alt"></i> 返回登录
+        </a>
+    </div>
+
+    <div class="sub-header">
+        <p>每一份努力都值得被记录 🚀</p>
+    </div>
+
+    <div class="portal-grid">
+        <div class="portal-card" onclick="openForm('homework')">
+            <div class="card-icon" style="background: #eef2ff; color: #6366f1;">
+                <i class="fas fa-book"></i>
+            </div>
+            <h3>作业登记</h3>
+            <p>作业完成优秀/按时</p>
+        </div>
+        
+        <div class="portal-card" onclick="openForm('cleaning')">
+            <div class="card-icon" style="background: #f0fdf4; color: #10b981;">
+                <i class="fas fa-broom"></i>
+            </div>
+            <h3>卫生检查</h3>
+            <p>值日认真负责</p>
+        </div>
+        
+        <div class="portal-card" onclick="openForm('exercise')">
+            <div class="card-icon" style="background: #fff7ed; color: #f59e0b;">
+                <i class="fas fa-running"></i>
+            </div>
+            <h3>跑操考勤</h3>
+            <p>全勤/精神饱满</p>
+        </div>
+        
+        <div class="portal-card" onclick="openForm('custom')">
+            <div class="card-icon" style="background: #fdf2f8; color: #ec4899;">
+                <i class="fas fa-magic"></i>
+            </div>
+            <h3>自定义</h3>
+            <p>申报其他闪光点</p>
+        </div>
+    </div>
+
+    <!-- 申报表单 -->
+    <div id="submitModal" class="modal">
+        <div class="modal-content">
+            <i class="fas fa-times close-icon" onclick="closeModal()"></i>
+            <div class="modal-header">
+                <h2 id="modalTitle">提交申请</h2>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">1. 选择班级</label>
+                <select id="classSelect" class="form-control" onchange="refreshData()">
+                    <option value="">请选择...</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">2. 选择申报对象 (<span id="selectedCount">0</span>)</label>
+                <div class="tab-container">
+                    <button id="tab-student" class="tab-btn active" onclick="switchTab('student')">选同学</button>
+                    <button id="tab-group" class="tab-btn" onclick="switchTab('group')">选小组</button>
+                </div>
+                
+                <div class="selector-box" id="selectorBox">
+                    <div id="studentList" class="grid-list">
+                        <div style="text-align:center; padding:20px; color:#cbd5e1; grid-column:1/-1;">请先选择班级</div>
+                    </div>
+                    <div id="groupList" style="display: none;">
+                        <!-- 小组列表 -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group" style="display: flex; gap: 15px;">
+                <div style="flex: 1;">
+                    <label class="form-label">分值</label>
+                    <input type="number" id="pointsInput" class="form-control" placeholder="+1">
+                </div>
+                <div style="flex: 2;">
+                    <label class="form-label">理由</label>
+                    <input type="text" id="reasonInput" class="form-control" placeholder="例如：作业全对">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">申报人 (如：学习委员)</label>
+                <input type="text" id="submitterInput" class="form-control" placeholder="填写你的身份或姓名">
+            </div>
+
+            <button class="btn-submit" onclick="submitAudit()">确认提交</button>
+        </div>
+    </div>
+
+    <script>
+        let allStudents = [];
+        let allGroups = [];
+        let selectedStudentIds = new Set();
+        let currentType = '';
+        let currentTab = 'student';
+
+        const PRESETS = {
+            'homework': { title: '📘 作业登记', reason: '作业完成优秀', points: 2 },
+            'cleaning': { title: '🧹 卫生检查', reason: '卫生值日负责', points: 2 },
+            'exercise': { title: '🏃 跑操考勤', reason: '跑操表现优秀', points: 1 },
+            'custom': { title: '✨ 自定义申报', reason: '', points: '' }
+        };
+
+        document.addEventListener('DOMContentLoaded', loadClasses);
+
+        async function loadClasses() {
+            try {
+                const res = await fetch('/api/classes');
+                const classes = await res.json();
+                const select = document.getElementById('classSelect');
+                select.innerHTML = '<option value="">请选择班级...</option>';
+                classes.forEach(c => {
+                    select.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+                });
+            } catch(e) { console.error(e); }
+        }
+
+        async function refreshData() {
+            const classId = document.getElementById('classSelect').value;
+            if(!classId) return;
+            
+            selectedStudentIds.clear();
+            updateSelectedCount();
+
+            const [sRes, gRes] = await Promise.all([
+                fetch(`/api/classes/${classId}/students`),
+                fetch(`/api/groups?class_id=${classId}`)
+            ]);
+            
+            allStudents = await sRes.json();
+            allGroups = await gRes.json();
+            
+            renderLists();
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            document.getElementById('tab-student').classList.toggle('active', tab === 'student');
+            document.getElementById('tab-group').classList.toggle('active', tab === 'group');
+            document.getElementById('studentList').style.display = tab === 'student' ? 'grid' : 'none';
+            document.getElementById('groupList').style.display = tab === 'group' ? 'block' : 'none';
+            renderLists();
+        }
+
+        function renderLists() {
+            // 渲染学生
+            const sContainer = document.getElementById('studentList');
+            sContainer.innerHTML = '';
+            allStudents.forEach(s => {
+                const div = document.createElement('div');
+                div.className = `select-item ${selectedStudentIds.has(s.id) ? 'selected' : ''}`;
+                div.textContent = s.name;
+                div.onclick = () => {
+                    if(selectedStudentIds.has(s.id)) selectedStudentIds.delete(s.id);
+                    else selectedStudentIds.add(s.id);
+                    renderLists();
+                    updateSelectedCount();
+                };
+                sContainer.appendChild(div);
+            });
+
+            // 渲染小组
+            const gContainer = document.getElementById('groupList');
+            gContainer.innerHTML = '';
+            allGroups.forEach(g => {
+                const groupStudents = allStudents.filter(s => s.group_id === g.id);
+                const isSelected = groupStudents.length > 0 && groupStudents.every(s => selectedStudentIds.has(s.id));
+                
+                const div = document.createElement('div');
+                div.className = `group-item ${isSelected ? 'selected' : ''}`;
+                div.innerHTML = `
+                    <div style="display:flex; align-items:center;">
+                        <span class="group-color-dot" style="background:${g.color}"></span>
+                        <strong>${g.name}</strong>
+                    </div>
+                    <span style="font-size:12px; opacity:0.7">${groupStudents.length} 人</span>
+                `;
+                div.onclick = () => {
+                    if(isSelected) groupStudents.forEach(s => selectedStudentIds.delete(s.id));
+                    else groupStudents.forEach(s => selectedStudentIds.add(s.id));
+                    renderLists();
+                    updateSelectedCount();
+                };
+                gContainer.appendChild(div);
+            });
+        }
+
+        function updateSelectedCount() {
+            document.getElementById('selectedCount').textContent = selectedStudentIds.size;
+        }
+
+        function openForm(type) {
+            currentType = type;
+            const preset = PRESETS[type];
+            document.getElementById('modalTitle').textContent = preset.title;
+            document.getElementById('reasonInput').value = preset.reason;
+            document.getElementById('pointsInput').value = preset.points;
+            document.getElementById('submitModal').style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('submitModal').style.display = 'none';
+        }
+
+        async function submitAudit() {
+            const classId = document.getElementById('classSelect').value;
+            if(!classId) return alert('请选择班级');
+            if(selectedStudentIds.size === 0) return alert('请至少选择一个对象');
+            
+            const points = parseInt(document.getElementById('pointsInput').value);
+            const reason = document.getElementById('reasonInput').value;
+            const submitter = document.getElementById('submitterInput').value || '学生申报';
+            
+            if(!points || points === 0) return alert('请输入有效分值');
+            if(!reason) return alert('请输入理由');
+
+            try {
+                const res = await fetch('/api/audit/submit', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        student_ids: Array.from(selectedStudentIds),
+                        change_amount: points,
+                        reason: reason,
+                        submitter: submitter
+                    })
+                });
+                
+                if(res.ok) {
+                    alert('申请已提交！请等待老师审核。');
+                    closeModal();
+                    selectedStudentIds.clear();
+                    updateSelectedCount();
+                    renderLists();
+                } else {
+                    alert('提交失败');
+                }
+            } catch(e) { console.error(e); }
+        }
+        
+        window.onclick = function(event) {
+            if (event.target.classList.contains('modal')) closeModal();
+        }
+    </script>
+</body>
+</html>
