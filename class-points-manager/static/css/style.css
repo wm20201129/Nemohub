@@ -16,6 +16,22 @@ body {
     max-width: 1200px;
     margin: 0 auto;
     padding: 20px;
+    width: 100%;
+}
+
+/* === 移动端基础修正 === */
+@media (max-width: 768px) {
+    .container { padding: 10px; width: 100% !important; max-width: 100vw !important; box-sizing: border-box !important; }
+    .navbar { height: auto !important; width: 100% !important; }
+    .nav-container { height: auto !important; padding: 0 10px !important; }
+    .nav-brand { font-size: 1.1rem !important; }
+    
+    /* 强制所有带表格的容器可滑动 */
+    .table-container, .table-responsive, .activity-list {
+        width: 100% !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+    }
 }
 
 /* 导航栏样式 */
@@ -1669,4 +1685,41 @@ body {
     border-radius: 5px;
     margin: 15px 0;
     text-align: center;
+}
+
+/* === 全局响应式补充优化 === */
+@media (max-width: 768px) {
+    /* 统一表格横向滚动 */
+    .table-container, .table-responsive {
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        margin-bottom: 1rem;
+    }
+    
+    .data-table, .modern-table, .beautify-table {
+        min-width: 600px; /* 保证列不被挤压 */
+    }
+
+    /* 按钮点击区域优化 */
+    .btn, .action-btn, .beauty-btn {
+        min-height: 38px;
+    }
+
+    /* 统一模态框适配 */
+    .modal-content {
+        width: 95% !important;
+        margin: 20px auto !important;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+
+    /* 标题字号缩小 */
+    h1 { font-size: 1.5rem !important; }
+    h2 { font-size: 1.25rem !important; }
+}
+
+@media (max-width: 480px) {
+    .nav-link { padding: 6px 10px; font-size: 12px; }
+    .container { padding: 10px 5px; }
 }
