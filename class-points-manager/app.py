@@ -13,6 +13,9 @@ import tempfile
 import time
 import socket
 import webbrowser
+import subprocess
+import threading
+import re
 from config import Config
 
 class Config:
@@ -23,7 +26,7 @@ class Config:
 
 app = Flask(__name__)
 app.config.from_object(Config)
-app.secret_key = 'cp-manager-secure-key' # 显式设置以便 session 工作
+app.secret_key = 'cp-manager-secure-key' 
 CORS(app)  # 允许跨域请求
 
 # 确保上传目录存在
@@ -39,10 +42,125 @@ def get_system_password():
     with open(password_file, 'r', encoding='utf-8') as f:
         return f.read().strip()
 
+from pyngrok import ngrok, conf
+
+import sys
+
+# 获取程序运行的根目录 (适配源码和 PyInstaller 打包后的路径)
+if getattr(sys, 'frozen', False):
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# 所有的路径都基于 BASE_DIR
+DATA_DIR = os.path.join(BASE_DIR, 'data')
+os.makedirs(DATA_DIR, exist_ok=True)
+
+# 覆盖 Flask 的数据库路径配置
+app.config['DATABASE_PATH'] = os.path.join(DATA_DIR, 'class_points.db')
+app.config['UPLOAD_FOLDER'] = os.path.join(BASE_DIR, 'static', 'uploads')
+
+# --- 内网穿透配置 ---
+current_online_url = None
+tunnel_logs = []
+
+# 将 Ngrok 程序锁定在 data 目录下，实现真正的便携
+ngrok_bin_dir = os.path.join(DATA_DIR, 'ngrok_bin')
+os.makedirs(ngrok_bin_dir, exist_ok=True)
+conf.get_default().ngrok_path = os.path.join(ngrok_bin_dir, "ngrok.exe")
+
+def log_callback(log):
+    global tunnel_logs
+    line = str(log).strip()
+    # 过滤掉一些没用的心跳日志，只保留关键信息
+    if "t=" in line:
+        # 提取 msg= 后的内容
+        msg_match = re.search(r'msg="([^"]+)"', line)
+        if msg_match:
+            tunnel_logs.append(msg_match.group(1))
+    else:
+        tunnel_logs.append(line)
+    
+    # 只保留最近 20 条
+    if len(tunnel_logs) > 20:
+        tunnel_logs.pop(0)
+
+@app.route('/api/tunnel/action', methods=['POST'])
+def tunnel_action():
+    global current_online_url, tunnel_logs
+    data = request.json
+    action = data.get('action')
+    token = data.get('token', '').strip()
+    
+    token_file = os.path.join(os.path.dirname(__file__), 'data', 'ngrok_token.txt')
+    
+    if action == 'start':
+        tunnel_logs = ["准备初始化 Ngrok..."]
+        try:
+            # 配置 pyngrok 实时捕获日志
+            py_conf = conf.get_default()
+            py_conf.log_event_callback = log_callback
+            
+            if token:
+                ngrok.set_auth_token(token)
+                with open(token_file, 'w') as f: f.write(token)
+            else:
+                if os.path.exists(token_file):
+                    with open(token_file, 'r') as f: 
+                        saved_token = f.read().strip()
+                        ngrok.set_auth_token(saved_token)
+                else:
+                    return jsonify({'success': False, 'error': 'needs_token'})
+
+            if not current_online_url:
+                tunnel_logs.append("正在启动隧道进程...")
+                public_url = ngrok.connect(5001).public_url
+                current_online_url = public_url
+            
+            return jsonify({'success': True, 'url': current_online_url})
+            
+        except Exception as e:
+            error_msg = str(e)
+            tunnel_logs.append(f"错误: {error_msg}")
+            if "authtoken" in error_msg.lower():
+                return jsonify({'success': False, 'error': 'invalid_token'})
+            return jsonify({'success': False, 'error': error_msg})
+    
+    elif action == 'stop':
+        try:
+            ngrok.kill()
+            current_online_url = None
+            tunnel_logs = ["隧道已手动关闭"]
+            return jsonify({'success': True})
+        except:
+            return jsonify({'success': False})
+
+@app.route('/api/tunnel/logs')
+def get_tunnel_logs():
+    return jsonify(tunnel_logs)
+
+@app.route('/api/tunnel/status')
+def tunnel_status():
+    return jsonify({
+        'active': current_online_url is not None,
+        'url': current_online_url
+    })
+
 @app.before_request
 def check_auth():
     """全局登录检查"""
-    allowed_paths = ['/login', '/static', '/api/verify_password']
+    # 开放学生端及基础资源
+    allowed_paths = [
+        '/login', 
+        '/static', 
+        '/api/verify_password', 
+        '/student_portal', 
+        '/api/audit/submit',
+        '/api/classes',
+        '/api/groups',
+        '/api/tunnel/status', # 开放状态查询
+        '/api/tunnel/action'  # 开放动作（方便登录前开启）
+    ]
     if any(request.path.startswith(path) for path in allowed_paths):
         return
     if 'logged_in' not in session:
@@ -132,6 +250,7 @@ def init_db():
             change_amount INTEGER NOT NULL,
             reason TEXT,
             teacher TEXT,
+            status TEXT DEFAULT 'approved',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (student_id) REFERENCES students (id)
         )
@@ -145,6 +264,7 @@ def init_db():
             change_amount INTEGER NOT NULL,
             reason TEXT,
             teacher TEXT,
+            status TEXT DEFAULT 'approved',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (group_id) REFERENCES groups (id)
         )
@@ -194,6 +314,7 @@ def init_db():
             student_id INTEGER NOT NULL,
             content TEXT,
             period TEXT,
+            tag TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (student_id) REFERENCES students (id)
         )
@@ -255,6 +376,23 @@ def check_and_init_tables():
                 return False
         else:
             print("所有必需表都存在")
+            
+            # 数据库迁移检查：尝试添加 tag 字段
+            try:
+                conn.execute("ALTER TABLE student_evaluations ADD COLUMN tag TEXT")
+                print("已为 student_evaluations 表添加 tag 字段")
+                conn.commit()
+            except sqlite3.OperationalError:
+                # 字段已存在，忽略错误
+                pass
+                
+            try:
+                conn.execute("ALTER TABLE points_history ADD COLUMN status TEXT DEFAULT 'approved'")
+                conn.execute("ALTER TABLE group_points_history ADD COLUMN status TEXT DEFAULT 'approved'")
+                print("已为积分历史表添加 status 字段")
+                conn.commit()
+            except sqlite3.OperationalError:
+                pass
         
         conn.close()
         return True
@@ -269,6 +407,109 @@ def check_and_init_tables():
 def index():
     """首页"""
     return render_template('index.html')
+
+@app.route('/student_portal')
+def student_portal_page():
+    """学生自管入口页面"""
+    return render_template('student_portal.html')
+
+@app.route('/api/audit/submit', methods=['POST'])
+def submit_audit():
+    """提交积分申请（不立即生效）"""
+    try:
+        check_and_init_tables()
+        data = request.json
+        # 兼容单人和批量
+        student_ids = data.get('student_ids', [])
+        if not student_ids and data.get('student_id'):
+            student_ids = [data.get('student_id')]
+            
+        change_amount = int(data.get('change_amount', 0))
+        reason = data.get('reason', '')
+        submitter = data.get('submitter', '学生申报') # 提交人（如：卫生委员）
+        
+        if not student_ids or change_amount == 0:
+            return jsonify({'error': '无效的申请数据'}), 400
+            
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        for sid in student_ids:
+            # 插入记录，状态为 pending，注意 created_at 使用本地时间
+            cursor.execute('''
+                INSERT INTO points_history 
+                (student_id, change_amount, reason, teacher, status, created_at) 
+                VALUES (?, ?, ?, ?, 'pending', ?)
+            ''', (sid, change_amount, reason, submitter, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+            
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'count': len(student_ids)})
+        
+    except Exception as e:
+        print(f"提交申请失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/audit/pending', methods=['GET'])
+def get_pending_audits():
+    """获取待审核列表"""
+    try:
+        conn = get_db_connection()
+        # 关联学生信息
+        sql = '''
+            SELECT ph.*, s.name as student_name, s.student_id as student_code, g.name as group_name
+            FROM points_history ph
+            JOIN students s ON ph.student_id = s.id
+            LEFT JOIN groups g ON s.group_id = g.id
+            WHERE ph.status = 'pending'
+            ORDER BY ph.created_at DESC
+        '''
+        audits = conn.execute(sql).fetchall()
+        conn.close()
+        return jsonify([dict(a) for a in audits])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/audit/process', methods=['POST'])
+def process_audit():
+    """处理审核（通过或拒绝）"""
+    try:
+        data = request.json
+        audit_ids = data.get('audit_ids', []) # 支持批量处理
+        action = data.get('action') # 'approve' or 'reject'
+        
+        if not audit_ids or action not in ['approve', 'reject']:
+            return jsonify({'error': '参数错误'}), 400
+            
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if action == 'approve':
+            # 1. 更新历史记录状态
+            placeholders = ','.join(['?'] * len(audit_ids))
+            cursor.execute(f"UPDATE points_history SET status = 'approved' WHERE id IN ({placeholders})", audit_ids)
+            
+            # 2. 真正把分加到学生身上
+            for aid in audit_ids:
+                record = conn.execute("SELECT student_id, change_amount FROM points_history WHERE id = ?", (aid,)).fetchone()
+                if record:
+                    cursor.execute(
+                        "UPDATE students SET points = points + ? WHERE id = ?",
+                        (record['change_amount'], record['student_id'])
+                    )
+                    
+        else: # reject
+            # 拒绝则直接标记为 rejected
+            placeholders = ','.join(['?'] * len(audit_ids))
+            cursor.execute(f"UPDATE points_history SET status = 'rejected' WHERE id IN ({placeholders})", audit_ids)
+            
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+        
+    except Exception as e:
+        print(f"审核处理失败: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/random')
 def random_page():
@@ -287,24 +528,87 @@ def handle_evaluation(student_id):
     if request.method == 'POST':
         data = request.json
         content = data.get('content')
-        period = data.get('period', datetime.now().strftime('%Y-%m'))
+        period = data.get('period', datetime.now().strftime('%Y-%m-%d'))
+        tag = data.get('tag', '日常寄语')
         
         conn.execute('''
-            INSERT INTO student_evaluations (student_id, content, period)
-            VALUES (?, ?, ?)
-        ''', (student_id, content, period))
+            INSERT INTO student_evaluations (student_id, content, period, tag)
+            VALUES (?, ?, ?, ?)
+        ''', (student_id, content, period, tag))
         conn.commit()
         conn.close()
         return jsonify({'success': True})
     
-    # GET
-    evals = conn.execute('''
-        SELECT * FROM student_evaluations 
-        WHERE student_id = ? 
-        ORDER BY created_at DESC
-    ''', (student_id,)).fetchall()
+    # GET (支持筛选)
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    tag = request.args.get('tag')
+    
+    query = 'SELECT * FROM student_evaluations WHERE student_id = ?'
+    params = [student_id]
+    
+    if start_date:
+        query += ' AND date(period) >= ?'
+        params.append(start_date)
+    if end_date:
+        query += ' AND date(period) <= ?'
+        params.append(end_date)
+    if tag:
+        query += ' AND tag = ?'
+        params.append(tag)
+        
+    query += ' ORDER BY created_at DESC'
+    
+    evals = conn.execute(query, params).fetchall()
     conn.close()
     return jsonify([dict(e) for e in evals])
+
+@app.route('/api/students/<int:student_id>/stats_detail', methods=['GET'])
+def get_student_stats_detail(student_id):
+    """获取学生详细积分统计（用于档案卡）"""
+    try:
+        check_and_init_tables()
+        conn = get_db_connection()
+        
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        date_filter = ""
+        params = [student_id]
+        
+        if start_date:
+            date_filter += " AND date(created_at) >= ?"
+            params.append(start_date)
+        if end_date:
+            date_filter += " AND date(created_at) <= ?"
+            params.append(end_date)
+            
+        # 1. 获取积分构成（按理由）
+        sql = f'''
+            SELECT reason, SUM(change_amount) as total_change, COUNT(*) as count
+            FROM points_history
+            WHERE student_id = ? {date_filter}
+            GROUP BY reason
+            ORDER BY total_change DESC
+        '''
+        details = conn.execute(sql, params).fetchall()
+        
+        # 2. 获取该时间段总分变化
+        sum_sql = f'''
+            SELECT SUM(change_amount) as total
+            FROM points_history
+            WHERE student_id = ? {date_filter}
+        '''
+        total = conn.execute(sum_sql, params).fetchone()['total'] or 0
+        
+        conn.close()
+        return jsonify({
+            'details': [dict(d) for d in details],
+            'period_total': total
+        })
+    except Exception as e:
+        print(f"获取统计详情失败: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/classes/<int:class_id>/export_report')
 def export_class_report(class_id):
@@ -472,8 +776,8 @@ def add_student():
         cursor = conn.cursor()
         try:
             cursor.execute(
-                'INSERT INTO students (class_id, name, student_id, group_id) VALUES (?, ?, ?, ?)',
-                (class_id, name, student_id, group_id)
+                'INSERT INTO students (class_id, name, student_id, group_id, created_at) VALUES (?, ?, ?, ?, ?)',
+                (class_id, name, student_id, group_id, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
             )
             new_student_id = cursor.lastrowid
             conn.commit()
@@ -579,8 +883,8 @@ def update_points(student_id):
         
         # 记录积分历史
         cursor.execute(
-            'INSERT INTO points_history (student_id, change_amount, reason, teacher) VALUES (?, ?, ?, ?)',
-            (student_id, change_amount, reason, teacher)
+            'INSERT INTO points_history (student_id, change_amount, reason, teacher, created_at) VALUES (?, ?, ?, ?, ?)',
+            (student_id, change_amount, reason, teacher, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         )
         
         # 获取更新后的积分
@@ -639,8 +943,8 @@ def batch_update_points():
                 
                 # 记录积分历史
                 cursor.execute(
-                    'INSERT INTO points_history (student_id, change_amount, reason, teacher) VALUES (?, ?, ?, ?)',
-                    (student_id, change_amount, reason, teacher)
+                    'INSERT INTO points_history (student_id, change_amount, reason, teacher, created_at) VALUES (?, ?, ?, ?, ?)',
+                    (student_id, change_amount, reason, teacher, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
                 )
                 success_count += 1
         
@@ -1079,9 +1383,9 @@ def update_group_points(group_id):
             # 记录个人积分历史
             cursor.execute(
                 '''INSERT INTO points_history 
-                   (student_id, change_amount, reason, teacher) 
-                   VALUES (?, ?, ?, ?)''',
-                (student_id, change_amount, reason, teacher)
+                   (student_id, change_amount, reason, teacher, created_at) 
+                   VALUES (?, ?, ?, ?, ?)''',
+                (student_id, change_amount, reason, teacher, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
             )
             
             updated_count += 1
@@ -1089,9 +1393,9 @@ def update_group_points(group_id):
         # 记录分组积分历史
         cursor.execute(
             '''INSERT INTO group_points_history 
-               (group_id, change_amount, reason, teacher) 
-               VALUES (?, ?, ?, ?)''',
-            (group_id, change_amount * updated_count, reason, teacher)
+               (group_id, change_amount, reason, teacher, created_at) 
+               VALUES (?, ?, ?, ?, ?)''',
+            (group_id, change_amount * updated_count, reason, teacher, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         )
         
         conn.commit()
@@ -1360,16 +1664,16 @@ def import_students():
                     # 插入学生数据
                     cursor = conn.cursor()
                     cursor.execute(
-                        'INSERT INTO students (class_id, group_id, name, student_id, points) VALUES (?, ?, ?, ?, ?)',
-                        (class_id, group_id, name, student_id, initial_points)
+                        'INSERT INTO students (class_id, group_id, name, student_id, points, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+                        (class_id, group_id, name, student_id, initial_points, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
                     )
                     new_student_id = cursor.lastrowid
                     
                     # 如果有初始积分，记录历史
                     if initial_points != 0:
                         cursor.execute(
-                            'INSERT INTO points_history (student_id, change_amount, reason, teacher) VALUES (?, ?, ?, ?)',
-                            (new_student_id, initial_points, '初始积分', '系统导入')
+                            'INSERT INTO points_history (student_id, change_amount, reason, teacher, created_at) VALUES (?, ?, ?, ?, ?)',
+                            (new_student_id, initial_points, '初始积分', '系统导入', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
                         )
                     
                     success_count += 1
@@ -1878,13 +2182,13 @@ def redeem_reward(student_id):
         )
         
         cursor.execute(
-            'INSERT INTO points_history (student_id, change_amount, reason, teacher) VALUES (?, ?, ?, ?)',
-            (student_id, -reward["points_cost"], f'兑换奖品：{reward["name"]}', '系统')
+            'INSERT INTO points_history (student_id, change_amount, reason, teacher, created_at) VALUES (?, ?, ?, ?, ?)',
+            (student_id, -reward["points_cost"], f'兑换奖品：{reward["name"]}', '系统', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         )
         
         cursor.execute(
-            'INSERT INTO redemptions (student_id, reward_id) VALUES (?, ?)',
-            (student_id, reward_id)
+            'INSERT INTO redemptions (student_id, reward_id, redeemed_at) VALUES (?, ?, ?)',
+            (student_id, reward_id, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         )
         
         conn.commit()
@@ -1946,8 +2250,8 @@ def redeem_group_reward(group_id):
                 (cost_per_student, s['id'])
             )
             cursor.execute(
-                'INSERT INTO points_history (student_id, change_amount, reason, teacher) VALUES (?, ?, ?, ?)',
-                (s['id'], -cost_per_student, f'小组兑换：{reward["name"]}', '系统')
+                'INSERT INTO points_history (student_id, change_amount, reason, teacher, created_at) VALUES (?, ?, ?, ?, ?)',
+                (s['id'], -cost_per_student, f'小组兑换：{reward["name"]}', '系统', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
             )
         
         # 5. 扣减库存
@@ -1958,14 +2262,14 @@ def redeem_group_reward(group_id):
             
         # 6. 记录小组兑换
         cursor.execute(
-            'INSERT INTO group_redemptions (group_id, reward_id) VALUES (?, ?)',
-            (group_id, reward_id)
+            'INSERT INTO group_redemptions (group_id, reward_id, redeemed_at) VALUES (?, ?, ?)',
+            (group_id, reward_id, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         )
         
         # 7. 记录小组积分变动历史 (用于统计)
         cursor.execute(
-            'INSERT INTO group_points_history (group_id, change_amount, reason, teacher) VALUES (?, ?, ?, ?)',
-            (group_id, -total_cost, f'兑换奖品：{reward["name"]}', '系统')
+            'INSERT INTO group_points_history (group_id, change_amount, reason, teacher, created_at) VALUES (?, ?, ?, ?, ?)',
+            (group_id, -total_cost, f'兑换奖品：{reward["name"]}', '系统', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         )
         
         conn.commit()
@@ -2108,3 +2412,4 @@ if __name__ == '__main__':
     
     # 启动服务器
     app.run(host='0.0.0.0', port=port, debug=False) # 生产环境建议关闭 debug
+    
