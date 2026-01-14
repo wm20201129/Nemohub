@@ -132,12 +132,10 @@ async function loadClasses() {
         // 检查元素是否存在再更新
         const selectors = [
             'class-select',
-            'classSelect', // 新增：适配 report.html
             'student-class-select', 
             'points-class-select',
             'ranking-class-select',
             'randomClassSelect',
-            'reportClassSelect',
             'deleteClassSelect'
         ];
         
@@ -280,9 +278,25 @@ async function loadClassData() {
                 const item = document.createElement('div');
                 item.className = 'activity-item';
                 
-                const changeType = change.change_amount > 0 ? 'add' : 'subtract';
-                const iconClass = changeType === 'add' ? 'fa-plus' : 'fa-minus';
-                const bgColor = changeType === 'add' ? '#48bb78' : '#f56565';
+                let iconClass = 'fa-plus';
+                let bgColor = '#48bb78';
+                let displayPoints = (change.change_amount > 0 ? '+' : '') + change.change_amount;
+                const reason = change.reason || '';
+
+                if (reason.includes('拍卖')) {
+                    iconClass = 'fa-gavel';
+                    bgColor = '#e11d48'; // 红色
+                } else if (reason.includes('悬赏')) {
+                    iconClass = 'fa-bullhorn';
+                    bgColor = '#2563eb'; // 蓝色
+                    displayPoints = '达成'; // 悬赏不扣分，显示达成
+                } else if (reason.includes('兑换')) {
+                    iconClass = 'fa-gift';
+                    bgColor = '#10b981'; // 绿色
+                } else if (change.change_amount < 0) {
+                    iconClass = 'fa-minus';
+                    bgColor = '#f56565';
+                }
                 
                 // 简单的时间格式化
                 let timeStr = '刚刚';
@@ -307,15 +321,13 @@ async function loadClassData() {
                     <div class="activity-icon" style="background-color: ${bgColor};">
                         <i class="fas ${iconClass}"></i>
                     </div>
-                    <div class="activity-details">
-                        <h4>
-                            <span>${change.student_name}</span>
-                            <span class="activity-time">${timeStr}</span>
-                        </h4>
-                        <p>${change.reason || '无理由'}</p>
+                    <div class="activity-content-flat">
+                        <span class="activity-name-flat">${change.student_name}</span>
+                        <span class="activity-reason-flat" title="${reason}">${reason}</span>
+                        <span class="activity-time-flat">${timeStr}</span>
                     </div>
-                    <div class="activity-points" style="color: ${bgColor};">
-                        ${change.change_amount > 0 ? '+' : ''}${change.change_amount}
+                    <div class="activity-points" style="color: ${bgColor}; font-size: ${displayPoints === '达成' ? '16px' : '22px'}">
+                        ${displayPoints}
                     </div>
                 `;
                 track.appendChild(item);
