@@ -2,393 +2,379 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>学生自主申报 - 班级积分系统</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>自助申报中心 - 积分系统</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Noto+Sans+SC:wght@400;700;900&display=swap');
+
         :root {
-            --primary: #6366f1;
-            --primary-light: #eef2ff;
-            --secondary: #ec4899;
-            --success: #10b981;
-            --warning: #f59e0b;
+            --primary: #4f46e5; 
+            --primary-gradient: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
             --bg: #f8fafc;
-            --text-main: #1e293b;
+            --text-main: #0f172a;
             --text-muted: #64748b;
+            --radius-lg: 20px;
+            --radius-md: 16px;
         }
-        
-        body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text-main); line-height: 1.5; }
-        
-        /* 顶部导航 */
-        .header {
-            background: white; padding: 15px 20px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.05); position: sticky; top: 0; z-index: 100;
-            display: flex; justify-content: space-between; align-items: center;
-        }
-        .header h1 { margin: 0; font-size: 20px; color: var(--primary); display: flex; align-items: center; gap: 8px; }
-        
-        .btn-back {
-            text-decoration: none; color: var(--text-muted); font-size: 14px; font-weight: 600;
-            display: flex; align-items: center; gap: 5px; padding: 8px 15px; border-radius: 10px;
-            background: var(--bg); transition: all 0.2s;
-        }
-        .btn-back:hover { background: #e2e8f0; color: var(--text-main); }
 
-        .sub-header { text-align: center; padding: 30px 20px 10px; }
-        .sub-header p { color: var(--text-muted); font-size: 14px; margin: 5px 0 0; }
-        
-        /* 功能卡片区 */
-        .portal-grid {
-            display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;
-            padding: 20px; max-width: 800px; margin: 0 auto;
+        body { 
+            margin: 0; font-family: 'Inter', 'Noto Sans SC', system-ui, sans-serif; 
+            background: var(--bg); color: var(--text-main); padding-bottom: 40px; line-height: 1.5;
         }
         
-        .portal-card {
-            background: white; border-radius: 24px; padding: 35px 20px;
-            text-align: center; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.02); border: 2px solid transparent;
+        .header { 
+            background: white; padding: 16px 24px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); 
+            position: sticky; top: 0; z-index: 100; display: flex; justify-content: space-between; align-items: center;
         }
-        .portal-card:hover { transform: translateY(-5px); box-shadow: 0 12px 25px rgba(99, 102, 241, 0.1); border-color: var(--primary-light); }
-        .portal-card:active { transform: scale(0.95); }
-        
-        .card-icon {
-            width: 75px; height: 70px; border-radius: 20px; margin: 0 auto 15px;
-            display: flex; align-items: center; justify-content: center; font-size: 32px;
-        }
-        
-        .portal-card h3 { margin: 0; font-size: 18px; font-weight: 700; }
-        .portal-card p { margin: 8px 0 0; color: var(--text-muted); font-size: 13px; }
-        
-        /* 模态框 */
-        .modal {
-            display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(15, 23, 42, 0.6); z-index: 1000; padding: 20px;
-            align-items: center; justify-content: center; backdrop-filter: blur(6px);
-        }
-        .modal-content {
-            background: white; border-radius: 28px; width: 100%; max-width: 500px;
-            padding: 30px; box-shadow: 0 25px 50px rgba(0,0,0,0.2);
-            display: flex; flex-direction: column; max-height: 90vh; position: relative;
-        }
-        
-        .modal-header { text-align: center; margin-bottom: 25px; }
-        .modal-header h2 { margin: 0; font-size: 22px; color: var(--text-main); }
-        
-        /* 表单样式 */
-        .form-group { margin-bottom: 20px; }
-        .form-label { display: block; margin-bottom: 8px; font-weight: 700; color: #475569; font-size: 14px; }
-        .form-control {
-            width: 100%; padding: 12px 16px; border: 2px solid #f1f5f9; border-radius: 14px;
-            font-size: 16px; box-sizing: border-box; outline: none; transition: all 0.2s;
-            background: #f8fafc;
-        }
-        .form-control:focus { border-color: var(--primary); background: white; box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1); }
-        
-        /* Tab 切换 */
-        .tab-container {
-            display: flex; background: #f1f5f9; padding: 4px; border-radius: 12px; margin-bottom: 12px;
-        }
-        .tab-btn {
-            flex: 1; padding: 8px; border: none; border-radius: 9px; cursor: pointer;
-            font-size: 13px; font-weight: 600; color: var(--text-muted); background: transparent; transition: all 0.2s;
-        }
-        .tab-btn.active { background: white; color: var(--primary); box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
+        .header h1 { font-size: 20px; font-weight: 800; color: var(--primary); margin:0; }
 
-        /* 选择列表 */
-        .selector-box {
-            border: 2px solid #f1f5f9; border-radius: 16px; padding: 10px;
-            max-height: 220px; overflow-y: auto; background: #fff;
-        }
-        .grid-list {
-            display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px;
-        }
-        .select-item {
-            padding: 10px 5px; text-align: center; border-radius: 10px; background: #f8fafc;
-            border: 1px solid #f1f5f9; cursor: pointer; transition: all 0.2s; font-size: 14px;
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        }
-        .select-item.selected { background: var(--primary-light); border-color: var(--primary); color: var(--primary); font-weight: 700; }
-        
-        .group-item {
-            display: flex; align-items: center; justify-content: space-between; padding: 12px 15px;
-            margin-bottom: 8px; background: #f8fafc; border-radius: 12px; border: 1px solid #f1f5f9; cursor: pointer;
-        }
-        .group-item.selected { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
-        .group-color-dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 10px; }
+        .container { padding: 10px 20px; max-width: 1000px; margin: 0 auto; }
 
-        .btn-submit {
-            width: 100%; padding: 16px; border: none; border-radius: 16px;
-            font-size: 16px; font-weight: 700; color: white; cursor: pointer;
-            background: var(--primary); box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
-            margin-top: 10px; transition: all 0.2s;
-        }
-        .btn-submit:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4); }
-        .btn-submit:active { transform: translateY(0); }
-        
-        .close-icon { position: absolute; top: 20px; right: 20px; font-size: 20px; color: #cbd5e1; cursor: pointer; }
+        .section-title { font-size: 18px; font-weight: 800; margin: 25px 0 15px; display: flex; align-items: center; gap: 10px; }
+        .section-title::before { content: ''; width: 6px; height: 18px; background: var(--primary-gradient); border-radius: 4px; }
 
-        /* 响应式补充 */
-        @media (max-width: 480px) {
-            .portal-grid { grid-template-columns: 1fr; }
-            .portal-card { padding: 25px 15px; }
-            .modal-content { padding: 20px; border-radius: 20px; }
-            .header h1 { font-size: 18px; }
+        /* 战队：精致小块网格 */
+        .group-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); 
+            gap: 12px; 
         }
+        .group-block { 
+            background: white; border-radius: 16px; padding: 15px 10px; text-align: center; 
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04); border-top: 4px solid var(--primary);
+            transition: transform 0.2s;
+        }
+        .group-block:hover { transform: translateY(-3px); }
+        .group-block div:nth-child(1) { font-size: 18px; font-weight: 900; margin-bottom: 4px; color: var(--primary); }
+        .group-block div:nth-child(2) { font-size: 14px; font-weight: 800; opacity: 0.6; }
+
+        /* 悬赏：自适应小块网格 */
+        .bounty-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); 
+            gap: 15px; 
+        }
+        .bounty-card { 
+            background: white; border-radius: 16px; padding: 15px; 
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04); 
+            border: 1px solid #f1f5f9;
+        }
+        
+        .leader-item { display:flex; justify-content:space-between; font-size:13px; margin-bottom:5px; padding:6px 10px; border-radius:10px; font-weight:800; background: #f8fafc; }
+
+        .portal-grid { 
+            display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-top: 30px; 
+            background: white; padding: 15px; border-radius: var(--radius-lg); box-shadow: 0 10px 25px rgba(0,0,0,0.08); 
+        }
+        .menu-card { text-align: center; cursor: pointer; }
+        .menu-icon { width: 50px; height: 50px; border-radius: 15px; margin: 0 auto 8px; display: flex; align-items: center; justify-content: center; font-size: 22px; color: white; }
+        .menu-name { font-weight: 800; font-size: 13px; color: var(--text-muted); }
+
+        /* 模态框样式 - 保持最稳的版本 */
+        .modal-mask { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; align-items: flex-end; }
+        .modal-body { background: white; width: 100%; border-radius: 30px 30px 0 0; max-height: 90vh; overflow-y: auto; }
+        .modal-header { padding: 20px 25px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+        .modal-content { padding: 20px 25px 40px; }
+        .form-group { margin-bottom: 15px; }
+        select, input { width: 100%; padding: 12px; border: 2px solid #f1f5f9; border-radius: 12px; font-size: 15px; box-sizing: border-box; }
+        .select-list { border: 2px solid #f1f5f9; border-radius: 16px; max-height: 200px; overflow-y: auto; padding: 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; }
+        .list-item { padding: 10px 5px; text-align: center; border-radius: 10px; background: #f8fafc; font-size: 13px; font-weight: 700; cursor: pointer; border: 1px solid transparent; }
+        .list-item.selected { background: #eef2ff; border-color: var(--primary); color: var(--primary); }
+        .role-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        .role-tag { background: #f1f5f9; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 800; cursor: pointer; color: var(--text-muted); }
+        .role-tag.active { background: #eef2ff; color: var(--primary); border: 1px solid var(--primary); }
+        .btn-submit { width: 100%; padding: 16px; border: none; border-radius: 18px; font-size: 16px; font-weight: 900; color: white; cursor: pointer; background: var(--primary); }
+        .toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #1e293b; color: white; padding: 12px 30px; border-radius: 30px; font-size: 14px; z-index: 2000; display: none; }
     </style>
 </head>
 <body>
-
     <div class="header">
-        <h1><i class="fas fa-user-astronaut"></i> 自助管理</h1>
-        <a href="/login" class="btn-back">
-            <i class="fas fa-sign-out-alt"></i> 返回登录
-        </a>
+        <h1><i class="fas fa-bolt"></i> 赛季实况中心</h1>
+        <a href="/login" style="text-decoration:none; font-size:14px; font-weight:800; color:var(--text-muted);">返回登录</a>
     </div>
+    
+    <div class="container">
+        <div class="section-title">🔥 战队实力排行榜</div>
+        <div id="groupProgressList" class="group-grid"></div>
 
-    <div class="sub-header">
-        <p>每一份努力都值得被记录 🚀</p>
-    </div>
+        <div class="section-title">赛季悬赏 · 实时战况</div>
+        <div id="bountyListContainer" class="bounty-grid"></div>
 
-    <div class="portal-grid">
-        <div class="portal-card" onclick="openForm('homework')">
-            <div class="card-icon" style="background: #eef2ff; color: #6366f1;">
-                <i class="fas fa-book"></i>
+        <div class="section-title">学生提交入口</div>
+        <div class="portal-grid">
+            <div class="menu-card" onclick="openApplyModal('学业管理')">
+                <div class="menu-icon" style="background:#6366f1;"><i class="fas fa-book"></i></div>
+                <div class="menu-name">学业</div>
             </div>
-            <h3>作业登记</h3>
-            <p>作业完成优秀/按时</p>
-        </div>
-        
-        <div class="portal-card" onclick="openForm('cleaning')">
-            <div class="card-icon" style="background: #f0fdf4; color: #10b981;">
-                <i class="fas fa-broom"></i>
+            <div class="menu-card" onclick="openApplyModal('班级管理')">
+                <div class="menu-icon" style="background:#f59e0b;"><i class="fas fa-tasks"></i></div>
+                <div class="menu-name">日常</div>
             </div>
-            <h3>卫生检查</h3>
-            <p>值日认真负责</p>
-        </div>
-        
-        <div class="portal-card" onclick="openForm('exercise')">
-            <div class="card-icon" style="background: #fff7ed; color: #f59e0b;">
-                <i class="fas fa-running"></i>
+            <div class="menu-card" onclick="openApplyModal('活动管理')">
+                <div class="menu-icon" style="background:#10b981;"><i class="fas fa-trophy"></i></div>
+                <div class="menu-name">荣誉</div>
             </div>
-            <h3>跑操考勤</h3>
-            <p>全勤/精神饱满</p>
-        </div>
-        
-        <div class="portal-card" onclick="openForm('custom')">
-            <div class="card-icon" style="background: #fdf2f8; color: #ec4899;">
-                <i class="fas fa-magic"></i>
+            <div class="menu-card" onclick="openApplyModal('自定义')">
+                <div class="menu-icon" style="background:#ec4899;"><i class="fas fa-fingerprint"></i></div>
+                <div class="menu-name">手动</div>
             </div>
-            <h3>自定义</h3>
-            <p>申报其他闪光点</p>
+            <div class="menu-card" onclick="openQueryModal()">
+                <div class="menu-icon" style="background:#64748b;"><i class="fas fa-search"></i></div>
+                <div class="menu-name">查询</div>
+            </div>
         </div>
     </div>
 
-    <!-- 申报表单 -->
-    <div id="submitModal" class="modal">
-        <div class="modal-content">
-            <i class="fas fa-times close-icon" onclick="closeModal()"></i>
+    <!-- 申报模态框 -->
+    <div id="applyModal" class="modal-mask">
+        <div class="modal-body">
             <div class="modal-header">
-                <h2 id="modalTitle">提交申请</h2>
+                <h3 id="modalTitle" style="margin:0; font-weight:900;">申报详情</h3>
+                <i class="fas fa-times-circle" style="font-size:24px; color:#ccc; cursor:pointer;" onclick="closeApplyModal()"></i>
             </div>
-            
-            <div class="form-group">
-                <label class="form-label">1. 选择班级</label>
-                <select id="classSelect" class="form-control" onchange="refreshData()">
-                    <option value="">请选择...</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">2. 选择申报对象 (<span id="selectedCount">0</span>)</label>
-                <div class="tab-container">
-                    <button id="tab-student" class="tab-btn active" onclick="switchTab('student')">选同学</button>
-                    <button id="tab-group" class="tab-btn" onclick="switchTab('group')">选小组</button>
-                </div>
-                
-                <div class="selector-box" id="selectorBox">
-                    <div id="studentList" class="grid-list">
-                        <div style="text-align:center; padding:20px; color:#cbd5e1; grid-column:1/-1;">请先选择班级</div>
+            <div class="modal-content">
+                <div class="form-group">
+                    <label>1. 申报对象</label>
+                    <div style="display:flex; gap:5px; background:#f1f5f9; padding:4px; border-radius:10px; margin-bottom:10px;">
+                        <button id="tabStu" style="flex:1; border:none; padding:8px; border-radius:8px; font-weight:800;" onclick="switchTab('student')">选同学</button>
+                        <button id="tabGrp" style="flex:1; border:none; padding:8px; border-radius:8px; font-weight:800;" onclick="switchTab('group')">选小组</button>
                     </div>
-                    <div id="groupList" style="display: none;">
-                        <!-- 小组列表 -->
+                    <div id="targetList" class="select-list"></div>
+                </div>
+                <div id="standardSection">
+                    <div class="form-group"><label>2. 项目分类</label><select id="catSelect" onchange="loadItems()"></select></div>
+                    <div class="form-group"><label>3. 具体事项</label><select id="itemSelect"></select></div>
+                </div>
+                <!-- 已移除旧版自定义输入框，全面启用标准化选择 -->
+                <div class="form-group"><label>4. 申报日期</label><input type="date" id="applyDate"></div>
+                <div class="form-group">
+                    <label>5. 申报人姓名</label>
+                    <input type="text" id="submitterName" placeholder="填写姓名">
+                    <div class="role-tags">
+                        <span class="role-tag" onclick="quickFill('班长', this)">班长</span>
+                        <span class="role-tag" onclick="quickFill('学习委员', this)">学委</span>
+                        <span class="role-tag" onclick="quickFill('课代表', this)">课代表</span>
+                        <span class="role-tag" onclick="quickFill('本人', this)">本人</span>
                     </div>
                 </div>
+                <button class="btn-submit" onclick="submitApply()">确认提交审核</button>
             </div>
-
-            <div class="form-group" style="display: flex; gap: 15px;">
-                <div style="flex: 1;">
-                    <label class="form-label">分值</label>
-                    <input type="number" id="pointsInput" class="form-control" placeholder="+1">
-                </div>
-                <div style="flex: 2;">
-                    <label class="form-label">理由</label>
-                    <input type="text" id="reasonInput" class="form-control" placeholder="例如：作业全对">
-                </div>
-            </div>
-            
-            <div class="form-group">
-                <label class="form-label">申报人 (如：学习委员)</label>
-                <input type="text" id="submitterInput" class="form-control" placeholder="填写你的身份或姓名">
-            </div>
-
-            <button class="btn-submit" onclick="submitAudit()">确认提交</button>
         </div>
     </div>
+
+    <!-- 查询模态框 -->
+    <div id="queryModal" class="modal-mask">
+        <div class="modal-body">
+            <div class="modal-header"><h3>积分档案查询</h3><i class="fas fa-times-circle" style="font-size:24px; color:#ccc; cursor:pointer;" onclick="closeQueryModal()"></i></div>
+            <div class="modal-content">
+                <div id="queryStep1">
+                    <label>选择查询选手：</label>
+                    <div id="queryStudentList" class="select-list" style="max-height:300px;"></div>
+                </div>
+                <div id="queryStep2" style="display:none;">
+                    <div style="background:#1e293b; padding:20px; border-radius:20px; color:white; text-align:center; margin-bottom:20px;">
+                        <h2 id="qName">---</h2>
+                        <div style="display:flex; justify-content:space-around;">
+                            <div><small>排名</small><div id="qRank" style="font-size:20px; font-weight:900;">--</div></div>
+                            <div><small>积分</small><div id="qPts" style="font-size:20px; font-weight:900; color:#fbbf24;">0</div></div>
+                        </div>
+                    </div>
+                    <label>变动明细：</label>
+                    <div id="qHistory" style="max-height:250px; overflow-y:auto; background:#f8fafc; padding:10px; border-radius:15px;"></div>
+                    <button class="btn-submit" style="background:#64748b; margin-top:15px;" onclick="backToQueryList()">返回重选</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="resultModal" class="modal-mask" style="align-items: center; justify-content: center;">
+        <div class="modal-body" style="max-width: 320px; border-radius: 35px; text-align: center; padding: 40px 20px;">
+            <div style="width: 80px; height: 80px; background: #f0fdf4; color: #10b981; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 40px; margin: 0 auto 25px;"><i class="fas fa-check-circle"></i></div>
+            <h3 style="margin: 0; font-size: 22px; font-weight: 950;">提交成功！</h3>
+            <p style="margin: 10px 0 30px; color: #64748b;">申请已进入审核队列</p>
+            <button class="btn-submit" onclick="closeResultPopup()">好的</button>
+        </div>
+    </div>
+
+    <!-- 确认模态框 (美化版 confirm) -->
+    <div id="confirmModal" class="modal-mask" style="align-items: center; justify-content: center; z-index: 2000; background: rgba(0,0,0,0.3);">
+        <div class="modal-body" style="max-width: 320px; border-radius: 30px; padding: 30px 25px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.2);">
+            <div style="width: 60px; height: 60px; background: #eff6ff; color: var(--primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px; margin: 0 auto 20px;"><i class="fas fa-question"></i></div>
+            <h3 style="margin: 0 0 10px; font-weight: 900; font-size: 20px;">确认提交？</h3>
+            <p id="confirmMsg" style="color: #64748b; font-size: 14px; margin-bottom: 25px; line-height: 1.6;">...</p>
+            <div style="display: flex; gap: 10px;">
+                <button onclick="closeConfirmModal()" style="flex: 1; padding: 12px; border: none; background: #f1f5f9; color: #64748b; font-weight: 800; border-radius: 12px; cursor: pointer;">取消</button>
+                <button onclick="executeSubmission()" style="flex: 1; padding: 12px; border: none; background: var(--primary); color: white; font-weight: 800; border-radius: 12px; cursor: pointer;">确认</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
 
     <script>
-        let allStudents = [];
-        let allGroups = [];
-        let selectedStudentIds = new Set();
-        let currentType = '';
-        let currentTab = 'student';
+        let students = [], groups = [], currentArea = '', currentTab = 'student', selectedIds = new Set();
+        let currentStandardData = [];
+        let pendingSubmission = null; // 暂存待提交的数据
 
-        const PRESETS = {
-            'homework': { title: '📘 作业登记', reason: '作业完成优秀', points: 2 },
-            'cleaning': { title: '🧹 卫生检查', reason: '卫生值日负责', points: 2 },
-            'exercise': { title: '🏃 跑操考勤', reason: '跑操表现优秀', points: 1 },
-            'custom': { title: '✨ 自定义申报', reason: '', points: '' }
-        };
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('applyDate').value = new Date().toISOString().split('T')[0];
+            initData();
+        });
 
-        document.addEventListener('DOMContentLoaded', loadClasses);
-
-        async function loadClasses() {
+        async function initData() {
             try {
-                const res = await fetch('/api/classes');
-                const classes = await res.json();
-                const select = document.getElementById('classSelect');
-                select.innerHTML = '<option value="">请选择班级...</option>';
-                classes.forEach(c => {
-                    select.innerHTML += `<option value="${c.id}">${c.name}</option>`;
-                });
+                const [sRes, gRes, groupRankRes, bountyRes] = await Promise.all([
+                    fetch('/api/students'), fetch('/api/groups'), fetch('/api/ranking?type=group'), fetch('/api/bounties/progress')
+                ]);
+                students = await sRes.json();
+                groups = await gRes.json();
+                const groupData = await groupRankRes.json();
+                document.getElementById('groupProgressList').innerHTML = groupData.map(g => `
+                    <div class="group-block" style="border-top-color:${g.color || '#4f46e5'}">
+                        <div>${g.name}</div>
+                        <div>${g.points} PTS</div>
+                    </div>`).join('');
+
+                const bData = await bountyRes.json();
+                document.getElementById('bountyListContainer').innerHTML = bData.map(b => `
+                    <div class="bounty-card">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+                            <div style="font-weight:900; font-size:18px;">${b.reward_name}</div>
+                            <div style="font-size:12px; color:#ef4444; font-weight:900; background:#fff1f2; padding:2px 8px; border-radius:5px;">${b.end_date||'长期'}</div>
+                        </div>
+                        <div style="font-size:13px; color:#64748b; margin-bottom:15px;">${b.description||'挑战任务'}</div>
+                        <div>
+                            ${b.leaders.map((l, i) => `<div class="leader-item"><span>${i+1}. ${l.name}</span><span>${l.points}/${b.target_points}</span></div>`).join('') || '<div style="text-align:center; color:#ccc;">虚位以待</div>'}
+                        </div>
+                    </div>`).join('') || '<div style="grid-column:1/-1; text-align:center; color:#ccc; padding:30px;">暂无活跃悬赏</div>';
             } catch(e) { console.error(e); }
         }
 
-        async function refreshData() {
-            const classId = document.getElementById('classSelect').value;
-            if(!classId) return;
+        function renderTargetList() {
+            const container = document.getElementById('targetList');
+            const data = (currentTab === 'student') ? students : groups;
+            container.innerHTML = data.map(item => `<div class="list-item ${selectedIds.has(item.id)?'selected':''}" onclick="toggleSelect(${item.id})">${item.name}</div>`).join('');
+        }
+        function toggleSelect(id) { if(selectedIds.has(id)) selectedIds.delete(id); else selectedIds.add(id); renderTargetList(); }
+        function switchTab(t) { 
+            currentTab = t; selectedIds.clear(); 
+            document.getElementById('tabStu').style.background = t==='student'?'#eef2ff':'transparent';
+            document.getElementById('tabGrp').style.background = t==='group'?'#eef2ff':'transparent';
+            renderTargetList(); 
+        }
+        async function openApplyModal(area) {
+            currentArea = area; selectedIds.clear();
+            document.getElementById('modalTitle').innerText = area + '申报';
+            document.getElementById('applyModal').style.display = 'flex';
             
-            selectedStudentIds.clear();
-            updateSelectedCount();
-
-            const [sRes, gRes] = await Promise.all([
-                fetch(`/api/classes/${classId}/students`),
-                fetch(`/api/groups?class_id=${classId}`)
-            ]);
+            // 统一逻辑：无论是自定义还是其他，都从后端加载配置
+            const res = await fetch(`/api/point_standards?area=${encodeURIComponent(area)}`);
+            currentStandardData = await res.json();
+            const cats = [...new Set(currentStandardData.map(d => d.category))];
             
-            allStudents = await sRes.json();
-            allGroups = await gRes.json();
-            
-            renderLists();
+            if (cats.length === 0) {
+                // 如果后端没有配置该分类的数据（例如数据库为空），给个提示
+                document.getElementById('catSelect').innerHTML = '<option value="">暂无配置</option>';
+                document.getElementById('itemSelect').innerHTML = '';
+            } else {
+                document.getElementById('catSelect').innerHTML = cats.map(c => `<option value="${c}">${c}</option>`).join('');
+                loadItems();
+            }
+            renderTargetList();
         }
-
-        function switchTab(tab) {
-            currentTab = tab;
-            document.getElementById('tab-student').classList.toggle('active', tab === 'student');
-            document.getElementById('tab-group').classList.toggle('active', tab === 'group');
-            document.getElementById('studentList').style.display = tab === 'student' ? 'grid' : 'none';
-            document.getElementById('groupList').style.display = tab === 'group' ? 'block' : 'none';
-            renderLists();
+        function loadItems() {
+            const cat = document.getElementById('catSelect').value;
+            const filtered = currentStandardData.filter(s => s.category === cat);
+            document.getElementById('itemSelect').innerHTML = filtered.map(d => `<option value="${d.name}" data-pts="${d.default_points}">${d.name} (${d.default_points>0?'+':''}${d.default_points})</option>`).join('');
         }
-
-        function renderLists() {
-            // 渲染学生
-            const sContainer = document.getElementById('studentList');
-            sContainer.innerHTML = '';
-            allStudents.forEach(s => {
-                const div = document.createElement('div');
-                div.className = `select-item ${selectedStudentIds.has(s.id) ? 'selected' : ''}`;
-                div.textContent = s.name;
-                div.onclick = () => {
-                    if(selectedStudentIds.has(s.id)) selectedStudentIds.delete(s.id);
-                    else selectedStudentIds.add(s.id);
-                    renderLists();
-                    updateSelectedCount();
-                };
-                sContainer.appendChild(div);
-            });
-
-            // 渲染小组
-            const gContainer = document.getElementById('groupList');
-            gContainer.innerHTML = '';
-            allGroups.forEach(g => {
-                const groupStudents = allStudents.filter(s => s.group_id === g.id);
-                const isSelected = groupStudents.length > 0 && groupStudents.every(s => selectedStudentIds.has(s.id));
-                
-                const div = document.createElement('div');
-                div.className = `group-item ${isSelected ? 'selected' : ''}`;
-                div.innerHTML = `
-                    <div style="display:flex; align-items:center;">
-                        <span class="group-color-dot" style="background:${g.color}"></span>
-                        <strong>${g.name}</strong>
-                    </div>
-                    <span style="font-size:12px; opacity:0.7">${groupStudents.length} 人</span>
-                `;
-                div.onclick = () => {
-                    if(isSelected) groupStudents.forEach(s => selectedStudentIds.delete(s.id));
-                    else groupStudents.forEach(s => selectedStudentIds.add(s.id));
-                    renderLists();
-                    updateSelectedCount();
-                };
-                gContainer.appendChild(div);
-            });
-        }
-
-        function updateSelectedCount() {
-            document.getElementById('selectedCount').textContent = selectedStudentIds.size;
-        }
-
-        function openForm(type) {
-            currentType = type;
-            const preset = PRESETS[type];
-            document.getElementById('modalTitle').textContent = preset.title;
-            document.getElementById('reasonInput').value = preset.reason;
-            document.getElementById('pointsInput').value = preset.points;
-            document.getElementById('submitModal').style.display = 'flex';
-        }
-
-        function closeModal() {
-            document.getElementById('submitModal').style.display = 'none';
-        }
-
-        async function submitAudit() {
-            const classId = document.getElementById('classSelect').value;
-            if(!classId) return alert('请选择班级');
-            if(selectedStudentIds.size === 0) return alert('请至少选择一个对象');
-            
-            const points = parseInt(document.getElementById('pointsInput').value);
-            const reason = document.getElementById('reasonInput').value;
-            const submitter = document.getElementById('submitterInput').value || '学生申报';
-            
-            if(!points || points === 0) return alert('请输入有效分值');
-            if(!reason) return alert('请输入理由');
-
-            try {
-                const res = await fetch('/api/audit/submit', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        student_ids: Array.from(selectedStudentIds),
-                        change_amount: points,
-                        reason: reason,
-                        submitter: submitter
-                    })
-                });
-                
-                if(res.ok) {
-                    alert('申请已提交！请等待老师审核。');
-                    closeModal();
-                    selectedStudentIds.clear();
-                    updateSelectedCount();
-                    renderLists();
-                } else {
-                    alert('提交失败');
-                }
-            } catch(e) { console.error(e); }
+        function quickFill(name, el) { 
+            document.getElementById('submitterName').value = name; 
+            document.querySelectorAll('.role-tag').forEach(t => t.classList.remove('active')); 
+            el.classList.add('active'); 
         }
         
-        window.onclick = function(event) {
-            if (event.target.classList.contains('modal')) closeModal();
+        async function submitApply() {
+            const subName = document.getElementById('submitterName').value;
+            if(!subName) return showToast('请填写申报人姓名');
+            
+            const selectEl = document.getElementById('itemSelect');
+            if(!selectEl.value) return showToast('请选择具体事项');
+            
+            const opt = selectEl.selectedOptions[0];
+            const pts = parseInt(opt.dataset.pts);
+            const reason = `[${currentArea}/${document.getElementById('catSelect').value}] ${opt.value}`;
+
+            let finalIds = [];
+            if(currentTab === 'group') { selectedIds.forEach(gid => { finalIds = [...finalIds, ...students.filter(s => s.group_id === gid).map(s => s.id)]; }); } else { finalIds = Array.from(selectedIds); }
+            
+            // 准备提交数据
+            pendingSubmission = {
+                student_ids: finalIds,
+                change_amount: pts,
+                reason: reason,
+                submitter: subName,
+                created_at: document.getElementById('applyDate').value + ' 12:00:00'
+            };
+
+            // 逻辑检查与弹窗提示
+            const isBenchmarkArea = (currentArea === '学业管理' || currentArea === '班级管理');
+            
+            if (isBenchmarkArea && pts < 0) {
+                if (finalIds.length === 0) {
+                    showConfirmModal("您未选择任何扣分对象。<br><br><b>是否确认【全班均已达标】？</b><br><br><span style='color:#10b981'>系统将自动为全员发放 +2 分奖励。</span>");
+                    return;
+                } else {
+                    showConfirmModal(`您选择了 <b>${finalIds.length}</b> 位同学进行扣分。<br><br><b>系统将自动为【其他未选中】的同学发放 +2 分达标奖励。</b><br><br>是否确认提交？`);
+                    return;
+                }
+            } else {
+                if (finalIds.length === 0) return showToast('请在列表中选择申报对象');
+                // 普通提交直接执行，不弹窗
+                executeSubmission();
+            }
         }
+
+        function showConfirmModal(msg) {
+            document.getElementById('confirmMsg').innerHTML = msg;
+            document.getElementById('confirmModal').style.display = 'flex';
+        }
+
+        function closeConfirmModal() {
+            document.getElementById('confirmModal').style.display = 'none';
+            pendingSubmission = null;
+        }
+
+        async function executeSubmission() {
+            if (!pendingSubmission) return;
+            // 关闭确认框
+            document.getElementById('confirmModal').style.display = 'none';
+            
+            try {
+                const res = await fetch('/api/audit/submit', { 
+                    method:'POST', 
+                    headers:{'Content-Type':'application/json'}, 
+                    body:JSON.stringify(pendingSubmission) 
+                });
+                
+                if(res.ok) { 
+                    closeApplyModal(); 
+                    document.getElementById('resultModal').style.display = 'flex'; 
+                } else { 
+                    showToast('提交失败，请联系管理员'); 
+                }
+            } catch(e) {
+                showToast('网络错误，请稍后重试');
+            }
+        }
+
+        function closeApplyModal() { document.getElementById('applyModal').style.display='none'; }
+        function closeResultPopup() { document.getElementById('resultModal').style.display='none'; }
+        function openQueryModal() { document.getElementById('queryModal').style.display='flex'; document.getElementById('queryStep1').style.display='block'; document.getElementById('queryStep2').style.display='none'; document.getElementById('queryStudentList').innerHTML = students.map(s => `<div class="list-item" onclick="fetchStudentDetail(${s.id}, '${s.name}')">${s.name}</div>`).join(''); }
+        async function fetchStudentDetail(sid, name) { const res = await fetch(`/api/students/${sid}/history`); const data = await res.json(); document.getElementById('queryStep1').style.display='none'; document.getElementById('queryStep2').style.display='block'; document.getElementById('qName').innerText = name; document.getElementById('qRank').innerText = data.rank; document.getElementById('qPts').innerText = data.points; document.getElementById('qHistory').innerHTML = data.history.map(h => `<div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #eee;"><small>${h.reason}</small><b style="color:${h.change_amount>0?'green':'red'}">${h.change_amount>0?'+':''}${h.change_amount}</b></div>`).join(''); }
+        function backToQueryList() { document.getElementById('queryStep1').style.display='block'; document.getElementById('queryStep2').style.display='none'; }
+        function closeQueryModal() { document.getElementById('queryModal').style.display='none'; }
+        function showToast(msg) { const t = document.getElementById('toast'); t.innerText = msg; t.style.display = 'block'; setTimeout(() => t.style.display='none', 2000); }
     </script>
 </body>
 </html>

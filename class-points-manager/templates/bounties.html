@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+
+{% block title %}悬赏榜单{% endblock %}
+
+{% block content %}
+<style>
+    body { background: #f0f2f5; }
+    .bounty-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+        background: white;
+        padding: 20px 30px;
+        border-radius: 16px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    }
+
+    .bounty-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+        gap: 25px;
+    }
+
+    .bounty-card {
+        background: white;
+        border-radius: 24px;
+        overflow: hidden;
+        border: 1px solid #e5e7eb;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        display: flex;
+        flex-direction: column;
+        position: relative;
+    }
+
+    .bounty-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+    }
+
+    .bounty-status {
+        position: absolute;
+        top: 15px;
+        right: 15px;
+        padding: 5px 12px;
+        border-radius: 50px;
+        font-size: 0.85rem;
+        font-weight: 700;
+        z-index: 10;
+    }
+
+    .status-active { background: #dcfce7; color: #16a34a; }
+    .status-finished { background: #f3f4f6; color: #6b7280; }
+
+    .bounty-image {
+        height: 200px;
+        background: #f9fafb;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-bottom: 1px solid #f1f5f9;
+    }
+
+    .bounty-image img { width: 100%; height: 100%; object-fit: cover; }
+    .bounty-image i { font-size: 4rem; color: #cbd5e1; }
+
+    .bounty-body { padding: 25px; flex: 1; }
+    .bounty-title { font-size: 1.5rem; font-weight: 800; color: #1e293b; margin-bottom: 10px; }
+    .bounty-target { 
+        font-size: 1.1rem; 
+        color: #2563eb; 
+        font-weight: 700; 
+        background: #eff6ff; 
+        padding: 8px 15px; 
+        border-radius: 12px;
+        display: inline-block;
+        margin-bottom: 15px;
+    }
+
+    .bounty-desc { color: #64748b; line-height: 1.6; margin-bottom: 20px; }
+
+    .winner-info {
+        border-top: 1px dashed #e5e7eb;
+        padding-top: 15px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .winner-avatar {
+        width: 40px; height: 40px; border-radius: 50%; background: #fbbf24;
+        display: flex; align-items: center; justify-content: center; font-weight: bold; color: white;
+    }
+
+    .winner-name { font-weight: 700; color: #1e293b; }
+
+    .btn-back {
+        padding: 10px 20px;
+        background: #64748b;
+        color: white;
+        border-radius: 10px;
+        text-decoration: none;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+</style>
+
+<div class="bounty-header">
+    <div style="display: flex; align-items: center; gap: 15px;">
+        <div style="width: 50px; height: 50px; background: #2563eb; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white;">
+            <i class="fas fa-bullhorn fa-lg"></i>
+        </div>
+        <div>
+            <h1 style="margin: 0; font-size: 1.5rem;">悬赏榜单</h1>
+            <p style="margin: 0; color: #64748b; font-size: 0.9rem;">谁能第一个揭榜？期待你的表现！</p>
+        </div>
+    </div>
+    <a href="/ranking" class="btn-back"><i class="fas fa-arrow-left"></i> 返回</a>
+</div>
+
+<div class="toggle-tabs" style="margin-bottom: 25px; background: white; padding: 5px; display: inline-flex; border-radius: 12px;">
+    <button class="toggle-tab active" onclick="loadBounties('active')" id="tabActive">进行中</button>
+    <button class="toggle-tab" onclick="loadBounties('finished')" id="tabFinished">已揭榜</button>
+</div>
+
+<div class="bounty-grid" id="bountyGrid">
+    <!-- 加载悬赏卡片 -->
+</div>
+
+<script>
+    let currentStatus = 'active';
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadBounties('active');
+    });
+
+    async function loadBounties(status) {
+        currentStatus = status;
+        document.getElementById('tabActive').classList.toggle('active', status === 'active');
+        document.getElementById('tabFinished').classList.toggle('active', status === 'finished');
+
+        const res = await fetch(`/api/bounties?status=${status}`);
+        const bounties = await res.json();
+        const grid = document.getElementById('bountyGrid');
+        
+        if (bounties.length === 0) {
+            grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:100px; color:#94a3b8;"><i class="fas fa-box-open fa-4x" style="display:block; margin-bottom:20px; opacity:0.3;"></i>暂时没有相关悬赏</div>';
+            return;
+        }
+
+        grid.innerHTML = bounties.map(b => `
+            <div class="bounty-card">
+                <span class="bounty-status ${b.status === 'active' ? 'status-active' : 'status-finished'}">
+                    ${b.status === 'active' ? '进行中' : '已揭榜'}
+                </span>
+                <div class="bounty-image">
+                    ${b.image_path ? `<img src="${b.image_path}">` : '<i class="fas fa-gift"></i>'}
+                </div>
+                <div class="bounty-body">
+                    <div class="bounty-title">${b.reward_name}</div>
+                    <div class="bounty-target">目标积分：${b.target_points} 分</div>
+                    <div class="bounty-desc">${b.description || '第一个达到目标分数的学生将获得此奖励。'}</div>
+                    
+                    ${b.status === 'finished' ? `
+                        <div class="winner-info">
+                            <div class="winner-avatar">${b.winner_name.charAt(0)}</div>
+                            <div>
+                                <div style="font-size:0.8rem; color:#64748b;">揭榜达人</div>
+                                <div class="winner-name">${b.winner_name}</div>
+                            </div>
+                            <div style="margin-left:auto; font-size:0.8rem; color:#94a3b8;">
+                                ${new Date(b.finished_at).toLocaleDateString()}
+                            </div>
+                        </div>
+                    ` : `
+                        <div style="text-align:right;">
+                            <button onclick="deleteBounty(${b.id})" style="background:none; border:none; color:#94a3b8; font-size:0.8rem; cursor:pointer; text-decoration:underline;">取消悬赏</button>
+                        </div>
+                    `}
+                </div>
+            </div>
+        `).join('');
+    }
+
+    async function deleteBounty(id) {
+        if (!confirm('确认取消这场悬赏吗？')) return;
+        const res = await fetch(`/api/bounty/${id}`, { method: 'DELETE' });
+        if (res.ok) {
+            loadBounties('active');
+        }
+    }
+</script>
+{% endblock %}

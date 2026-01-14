@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>兑换小铺 - 班级积分管理系统</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #10b981; --primary-dark: #059669; --accent: #8b5cf6;
+            --bg: #f8fafc; --card-bg: rgba(255, 255, 255, 0.9);
+        }
+        body { 
+            font-family: 'Noto Sans SC', sans-serif; 
+            background: linear-gradient(135deg, #f0fdf4 0%, #eef2ff 100%); 
+            margin: 0; min-height: 100vh; padding: 20px; 
+        }
+        .shop-container { max-width: 1000px; margin: 0 auto; position: relative; }
+        .top-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .back-home-btn {
+            padding: 10px 20px; background: white; color: #64748b; border-radius: 12px;
+            text-decoration: none; font-weight: 700; font-size: 0.9rem;
+            display: flex; align-items: center; gap: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            transition: all 0.2s; border: 1px solid #e2e8f0;
+        }
+        .back-home-btn:hover { background: #f1f5f9; color: #1e293b; transform: translateX(-5px); }
+
+        .shop-header { text-align: center; margin-bottom: 40px; }
+        .shop-header h1 { 
+            font-size: 2.5rem; font-weight: 900; color: #1e293b; margin: 0; 
+            background: linear-gradient(to right, #10b981, #3b82f6);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .shop-header p { color: #64748b; font-size: 1.1rem; margin-top: 10px; }
+
+        .user-selector {
+            background: var(--card-bg); backdrop-filter: blur(10px);
+            padding: 25px; border-radius: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+            margin-bottom: 30px; display: flex; justify-content: center;
+            border: 1px solid white;
+        }
+        .select-wrapper { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 400px; }
+        .select-label { font-size: 0.9rem; font-weight: 800; color: #94a3b8; text-align: center; }
+
+        select {
+            padding: 15px 25px; border: 2px solid #e2e8f0; border-radius: 18px; outline: none; 
+            font-weight: 700; color: #334155; font-size: 1.1rem; text-align: center;
+            background: white; cursor: pointer; transition: all 0.2s; width: 100%;
+        }
+        select:focus { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.1); }
+
+        .grocery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
+        .grocery-card {
+            background: white; padding: 30px 20px; border-radius: 28px; 
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+            text-align: center; transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); 
+            cursor: pointer; border: 2px solid transparent; position: relative; overflow: hidden;
+        }
+        .grocery-card::before { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 6px; background: var(--primary); opacity: 0.8; }
+        .grocery-card:hover { transform: translateY(-10px); border-color: var(--primary); box-shadow: 0 20px 25px -5px rgba(16, 185, 129, 0.1); }
+        .grocery-icon { font-size: 3rem; background: #f0fdf4; color: var(--primary); width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; transition: all 0.3s; }
+        .grocery-card:hover .grocery-icon { transform: rotate(15deg) scale(1.1); background: var(--primary); color: white; }
+        .grocery-name { font-size: 1.25rem; font-weight: 900; color: #1e293b; margin-bottom: 8px; }
+        .grocery-cost { display: inline-block; padding: 5px 15px; background: #ecfdf5; color: #059669; font-weight: 900; border-radius: 12px; font-size: 1.1rem; }
+        .grocery-stock { font-size: 0.85rem; color: #94a3b8; margin-top: 12px; font-weight: 500; }
+
+        #successOverlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255,255,255,0.98); z-index: 1000; flex-direction: column; 
+            align-items: center; justify-content: center; text-align: center;
+            animation: fadeIn 0.5s ease;
+        }
+        .success-icon { font-size: 6rem; color: var(--primary); margin-bottom: 25px; animation: scaleIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        .back-btn { margin-top: 40px; padding: 15px 40px; background: #1e293b; color: white; text-decoration: none; border-radius: 16px; font-weight: 800; transition: 0.2s; border: none; cursor: pointer; }
+
+        @media (max-width: 600px) {
+            .shop-header h1 { font-size: 1.8rem; }
+            .grocery-grid { grid-template-columns: 1fr 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="shop-container">
+        <div class="top-nav">
+            <a href="/login" class="back-home-btn"><i class="fas fa-arrow-left"></i> 返回主页</a>
+            <div style="color:#94a3b8; font-size:0.8rem; font-weight:700;"><i class="fas fa-clock"></i> 状态: 营业中</div>
+        </div>
+
+        <div class="shop-header">
+            <h1 id="shopTitle">兑换小铺</h1>
+            <p>好分换好礼，学习更有劲 🚀</p>
+        </div>
+
+        <div class="user-selector">
+            <div class="select-wrapper">
+                <span class="select-label">确认你的姓名</span>
+                <select id="studentSelect">
+                    <option value="">正在同步名单...</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="grocery-grid" id="groceryGrid"></div>
+        <div style="text-align:center; margin-top:50px; padding:20px; opacity:0.5;"><p style="font-size:0.8rem; color:#64748b;">— 兑换申请将提交至后台，请找老师领取实物 —</p></div>
+    </div>
+
+    <div id="successOverlay">
+        <div class="success-icon"><i class="fas fa-check-circle"></i></div>
+        <h2 style="font-size: 2.5rem; color: #1e293b; margin: 0;">申请成功！</h2>
+        <p style="font-size: 1.2rem; color: #64748b; margin-top: 15px; max-width: 400px; line-height: 1.6;">你的兑换申请已提交后台。<br>请记得找老师<b>审批并领取</b>奖励哦！</p>
+        <button onclick="location.reload()" class="back-btn">继续兑换</button>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                // 1. 获取班级信息 (单班级模式)
+                const sysRes = await fetch('/api/system/info');
+                if (sysRes.ok) {
+                    const sysData = await sysRes.json();
+                    if (sysData) document.getElementById('shopTitle').innerText = sysData.class_name + ' 兑换小铺';
+                }
+
+                // 2. 直接拉取全局学生名单 (单班级简化版 API)
+                const sRes = await fetch('/api/students');
+                const studentSelect = document.getElementById('studentSelect');
+                if (sRes.ok) {
+                    const students = await sRes.json();
+                    studentSelect.innerHTML = '<option value="">请确认你的名字...</option>' + 
+                        students.map(s => `<option value="${s.id}">${s.name} (${s.student_id})</option>`).join('');
+                } else {
+                    studentSelect.innerHTML = '<option value="">无法加载名单，请刷新</option>';
+                }
+                
+                // 3. 加载全能物资 (杂货 + 非特殊常规奖品)
+                const gRes = await fetch('/api/rewards');
+                const allRewards = await gRes.json();
+                
+                // 过滤逻辑：(是杂货) 或者 (是常规奖品且非特殊)
+                const groceries = allRewards.filter(r => r.is_grocery === 1 || (r.is_grocery === 0 && r.is_special === 0));
+                
+                const grid = document.getElementById('groceryGrid');
+                
+                if (groceries.length === 0) {
+                    grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:50px; color:#94a3b8;">仓库目前没有可兑换的商品，联系老师上架吧~</div>';
+                    return;
+                }
+
+                grid.innerHTML = groceries.map(g => `
+                    <div class="grocery-card" onclick="${g.stock > 0 ? `submitRedeem(${g.id}, '${g.name}', ${g.points_cost})` : ''}" style="${g.stock <= 0 ? 'opacity:0.5; filter:grayscale(1); cursor:not-allowed;' : ''}">
+                        <div class="grocery-icon">${g.stock <= 0 ? '<i class="fas fa-ban"></i>' : '<i class="fas fa-ticket-alt"></i>'}</div>
+                        <div class="grocery-name">${g.name} ${g.stock <= 0 ? '<span style="font-size:10px;color:#ef4444">[售罄]</span>':''}</div>
+                        <div class="grocery-cost">${g.points_cost} 积分</div>
+                        <div class="grocery-stock">剩余库存: ${g.stock}</div>
+                    </div>
+                `).join('');
+            } catch (e) { console.error('加载失败:', e); }
+        });
+
+        async function submitRedeem(rewardId, rewardName, cost) {
+            const studentSelect = document.getElementById('studentSelect');
+            const studentId = studentSelect.value;
+            if(!studentId) {
+                alert('⚠️ 哎呀！请先在上方确认你的名字，老师才知道奖品给谁。');
+                window.scrollTo({ top: 0, behavior: 'smooth' }); return;
+            }
+            const studentName = studentSelect.options[studentSelect.selectedIndex].text;
+            if(!confirm(`你好 ${studentName}！\n确定要用 ${cost} 积分兑换【${rewardName}】吗？`)) return;
+
+            const res = await fetch('/api/grocery/redeem_request', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ student_id: studentId, reward_id: rewardId })
+            });
+            if(res.ok) document.getElementById('successOverlay').style.display = 'flex';
+            else { const data = await res.json(); alert('❌ ' + (data.error || '申请失败')); }
+        }
+    </script>
+</body>
+</html>

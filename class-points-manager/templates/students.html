@@ -1,1029 +1,244 @@
 {% extends "base.html" %}
 
-{% block title %}学生管理{% endblock %}
+{% block title %}班级成员中心{% endblock %}
 
 {% block content %}
 <style>
-    /* 导入模态框特定样式 */
-    #importModal .modal-content {
-        display: flex;
-        flex-direction: column;
-        max-width: 600px; /* 默认宽度 */
-        height: 90vh; /* 最大高度限制为视口高度的90% */
-        max-height: 800px; /* 固定最大高度 */
-        box-shadow: 0 10px 25px rgba(0,0,0,0.1); /* 柔和阴影 */
-        border-radius: 12px;
-        overflow: hidden; /* 防止内容溢出模态框自身 */
-    }
-
-    #importModal .modal-body {
-        flex: 1; /* 占据剩余空间 */
-        overflow-y: auto; /* 允许内容滚动 */
-        padding: 20px; /* 内部填充 */
-        display: flex;
-        flex-direction: column; /* 内部元素垂直排列 */
-        gap: 20px; /* 元素间距 */
-    }
-
-    #importModal .modal-footer {
-        padding: 15px 20px;
-        border-top: 1px solid #f1f5f9;
-        background-color: #fcfcfc;
-        display: flex;
-        justify-content: flex-end;
-        gap: 10px;
-        flex-shrink: 0; /* 防止被挤压 */
-    }
-    
-    /* 美化滚动条 */
-    #importModal .modal-body::-webkit-scrollbar { width: 6px; }
-    #importModal .modal-body::-webkit-scrollbar-track { background: #f1f5f9; }
-    #importModal .modal-body::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-    #importModal .modal-body::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-
-    /* 响应式调整 */
-    @media (max-width: 768px) {
-        #importModal .modal-content {
-            height: 95vh;
-            max-width: 95%;
-            margin: 2.5vh auto; /* 垂直居中 */
-        }
-
-        .page-header {
-            flex-direction: column;
-            align-items: stretch;
-            gap: 12px;
-            padding: 15px !important;
-        }
-
-        .header-actions {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-        }
-
-        .header-actions .btn, .header-actions a {
-            width: 100%;
-            justify-content: center;
-            font-size: 13px;
-            padding: 10px 5px;
-        }
-        
-        .table-container {
-            width: 100%;
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-            border-radius: 12px;
-            margin-top: 15px;
-            background: white;
-            border: 1px solid #e2e8f0;
-        }
-        
-        .beautify-table {
-            min-width: 750px; 
-        }
-    }
-
-    @media (max-width: 576px) {
-        #importModal .modal-content {
-            max-width: 98%;
-            height: 98vh;
-            margin: 1vh auto;
-        }
-        #importModal .modal-body {
-            padding: 15px;
-            gap: 15px;
-        }
-        #importModal .modal-footer {
-            padding: 10px 15px;
-        }
-        
-        /* 小屏幕下按钮堆叠 */
-        .header-actions {
-            grid-template-columns: 1fr;
-        }
-        
-        .beauty-filter-bar { padding: 10px; gap: 10px; }
-        .beauty-search-box { min-width: 100%; }
-        .beautify-table { font-size: 13px; }
-        .beautify-table th, .beautify-table td { padding: 10px 8px; }
-    }
+    .member-container { display: grid; grid-template-columns: 280px 1fr; gap: 25px; margin-top: 10px; }
+    .group-panel { background: white; border-radius: 24px; padding: 25px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); height: fit-content; position: sticky; top: 90px; }
+    .group-panel h3 { margin: 0 0 20px 0; font-size: 1.1rem; font-weight: 800; display: flex; align-items: center; gap: 10px; }
+    .group-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
+    .group-card { padding: 12px 15px; border-radius: 15px; border: 1px solid #f1f5f9; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: 0.2s; }
+    .group-card:hover { border-color: var(--primary); background: #f8faff; }
+    .group-card.active { border-color: var(--primary); background: #eef2ff; box-shadow: 0 4px 10px rgba(99, 102, 241, 0.1); }
+    .group-info { display: flex; align-items: center; gap: 10px; }
+    .group-dot { width: 12px; height: 12px; border-radius: 50%; }
+    .group-name { font-weight: 700; font-size: 14px; }
+    .group-count { font-size: 12px; color: #94a3b8; }
+    .student-panel { background: white; border-radius: 24px; padding: 25px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
+    .table-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px; }
+    .search-box { position: relative; flex: 1; min-width: 200px; }
+    .search-box i { position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: #cbd5e1; }
+    .search-box input { width: 100%; padding: 10px 15px 10px 40px; border: 2px solid #f1f5f9; border-radius: 12px; outline: none; transition: 0.2s; }
+    .search-box input:focus { border-color: var(--primary); }
+    .beautify-table { width: 100%; border-collapse: collapse; }
+    .beautify-table th { text-align: left; padding: 15px; color: #64748b; font-weight: 700; font-size: 13px; border-bottom: 2px solid #f1f5f9; }
+    .beautify-table td { padding: 15px; border-bottom: 1px solid #f1f5f9; font-size: 14px; vertical-align: middle; }
+    .stu-avatar { width: 35px; height: 35px; border-radius: 10px; background: #eef2ff; color: var(--primary); display: flex; align-items: center; justify-content: center; font-weight: 800; }
+    .group-tag { padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; }
+    @media (max-width: 992px) { .member-container { grid-template-columns: 1fr; } .group-panel { position: static; } }
 </style>
-<div class="page-header">
-    <h1><i class="fas fa-users"></i> 学生管理</h1>
-    <div class="header-actions">
-        <button class="btn btn-primary" onclick="showAddStudentModal()">
-            <i class="fas fa-user-plus"></i> 添加学生
-        </button>
-        <!-- 添加导入导出按钮 -->
-        <button class="btn btn-success" onclick="showImportModal()">
-            <i class="fas fa-file-import"></i> Excel导入
-        </button>
-        <button class="btn btn-secondary" onclick="exportStudents()">
-            <i class="fas fa-download"></i> 导出名单
-        </button>
+
+<div class="member-container">
+    <div class="group-panel">
+        <!-- 班主任配置 (高级版) -->
+        <div style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); padding: 20px; border-radius: 24px; margin-bottom: 30px; box-shadow: 0 10px 20px rgba(99, 102, 241, 0.2); color: white; position: relative; overflow: hidden;">
+            <div style="position: absolute; right: -15px; bottom: -15px; opacity: 0.1; font-size: 80px;">
+                <i class="fas fa-user-tie"></i>
+            </div>
+            <div style="font-size: 10px; opacity: 0.8; font-weight: 900; margin-bottom: 12px; letter-spacing: 1px; text-transform: uppercase;">Class Captain</div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="width: 45px; height: 45px; border-radius: 15px; background: rgba(255,255,255,0.2); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; font-size: 20px; border: 1px solid rgba(255,255,255,0.3);">
+                    <i class="fas fa-id-badge"></i>
+                </div>
+                <div style="flex: 1;">
+                    <input type="text" id="teacherNameInput" 
+                           style="border: none; background: transparent; font-weight: 900; font-size: 18px; color: white; width: 100%; outline: none; padding: 4px 0;" 
+                           placeholder="姓名" onblur="updateTeacherName(this)"
+                           onfocus="this.style.borderBottom='2px solid rgba(255,255,255,0.5)'"
+                           onkeypress="if(event.key==='Enter') this.blur()">
+                    <div style="font-size: 11px; opacity: 0.7; margin-top: 2px;">班级最高管理员</div>
+                </div>
+            </div>
+        </div>
+        <h3><i class="fas fa-layer-group" style="color:var(--primary)"></i> 小组建设</h3>
+        <div id="groupListView" class="group-list"></div>
+        <button class="btn btn-primary" style="width:100%; border-radius:12px;" onclick="showGroupModal()"><i class="fas fa-plus"></i> 创建新小组</button>
+    </div>
+    <div class="student-panel">
+        <div class="table-header">
+            <h2 style="margin:0; font-size:1.3rem; font-weight:900;">全班名单</h2>
+            <div class="search-box"><i class="fas fa-search"></i><input type="text" id="stuSearch" placeholder="搜索姓名或学号..." oninput="filterStudents()"></div>
+            <div style="display:flex; gap:10px;">
+                <button class="btn btn-primary" onclick="showAddStudentModal()"><i class="fas fa-user-plus"></i> 新增学生</button>
+                <button class="btn btn-success" onclick="showImportModal()"><i class="fas fa-file-import"></i> 批量导入</button>
+            </div>
+        </div>
+        <div style="overflow-x: auto;">
+            <table class="beautify-table">
+                <thead><tr><th>学生姓名</th><th>学号</th><th>所属小组</th><th>当前积分</th><th style="text-align:right;">操作</th></tr></thead>
+                <tbody id="studentTableBody"></tbody>
+            </table>
+        </div>
     </div>
 </div>
 
-<!-- Excel导入模态框 -->
+<!-- 弹窗部分保持一致 -->
+<div id="groupModal" class="modal"><div class="modal-content" style="max-width: 350px;"><div class="modal-header"><h3>小组配置</h3><span class="close" onclick="closeModal('groupModal')">&times;</span></div><div class="modal-body" style="padding:20px;"><input type="hidden" id="editGroupId"><div class="form-group"><label>小组名称</label><input type="text" id="groupNameInput" class="form-control"></div><div class="form-group"><label>代表颜色</label><input type="color" id="groupColorInput" value="#6366f1" style="height:50px; padding:2px;"></div><button class="btn btn-primary" style="width:100%;" onclick="saveGroup()">保存小组</button></div></div></div>
+<div id="studentModal" class="modal"><div class="modal-content" style="max-width: 400px;"><div class="modal-header"><h3 id="stuModalTitle">学生信息</h3><span class="close" onclick="closeModal('studentModal')">&times;</span></div><div class="modal-body" style="padding:20px;"><input type="hidden" id="editStuId"><div class="form-group"><label>学生姓名</label><input type="text" id="stuNameInput" class="form-control" required></div><div class="form-group"><label>学号</label><input type="text" id="stuCodeInput" class="form-control" required></div><div class="form-group"><label>所属小组</label><select id="stuGroupSelect" class="form-control"></select></div><button class="btn btn-primary" style="width:100%;" onclick="saveStudent()">保存信息</button></div></div></div>
+<!-- 弹窗：批量导入中心 (高级版) -->
 <div id="importModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h2><i class="fas fa-file-import"></i> Excel导入学生</h2>
-            <span class="close" onclick="closeImportModal()">&times;</span>
+    <div class="modal-content" style="max-width: 550px; border-radius: 32px; overflow: hidden;">
+        <div class="modal-header" style="background: #10b981; color: white; padding: 20px 30px;">
+            <h3 style="margin:0; font-size: 1.2rem;"><i class="fas fa-file-import"></i> 成员批量录入中心</h3>
+            <span class="close" onclick="closeModal('importModal')" style="color:white; opacity:0.8;">&times;</span>
         </div>
-        <div class="modal-body">
-            <div class="import-instructions">
-                <h3><i class="fas fa-info-circle"></i> 导入说明</h3>
-                <ul>
-                    <li>下载模板文件，按格式填写学生信息</li>
-                    <li>Excel文件必须包含"姓名"和"学号"列</li>
-                    <li>"分组"列可选，如果分组不存在会自动创建</li>
-                    <li>"初始积分"列可选，默认为0</li>
-                </ul>
-                <div class="import-actions">
-                    <button class="btn btn-info" onclick="downloadTemplate()">
-                        <i class="fas fa-download"></i> 下载模板
-                    </button>
+        <div class="modal-body" style="padding:30px;">
+            <!-- 第一步 -->
+            <div style="display: flex; gap: 20px; align-items: flex-start; margin-bottom: 30px; position: relative;">
+                <div style="width: 32px; height: 32px; border-radius: 50%; background: #10b981; color: white; display: flex; align-items: center; justify-content: center; font-weight: 900; flex-shrink: 0; z-index: 2;">1</div>
+                <div style="position: absolute; left: 15px; top: 32px; bottom: -30px; width: 2px; background: #f1f5f9; z-index: 1;"></div>
+                <div style="flex: 1;">
+                    <h4 style="margin: 0 0 8px 0; font-size: 15px; color: #1e293b;">获取标准填报模板</h4>
+                    <p style="font-size: 12px; color: #94a3b8; margin-bottom: 12px;">请务必使用系统生成的模板，以保证数据格式正确。</p>
+                    <div onclick="downloadTemplate()" style="background: #f0fdf4; border: 2px dashed #10b981; padding: 15px; border-radius: 16px; text-align: center; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#dcfce7'">
+                        <i class="fas fa-file-excel" style="font-size: 24px; color: #10b981; margin-bottom: 8px;"></i>
+                        <div style="color: #059669; font-weight: 800; font-size: 13px;">点击下载：成员导入模板.xlsx</div>
+                    </div>
                 </div>
             </div>
-            
-            <div class="import-form-content"> <!-- 新增的 wrapper -->
-                <form id="importForm" enctype="multipart/form-data">
-                    <div class="form-group">
-                        <label for="import-class"><i class="fas fa-school"></i> 选择班级 *</label>
-                        <select id="import-class" required>
-                            <option value="">请选择班级</option>
-                        </select>
-                    </div>
+
+            <!-- 第二步 -->
+            <div style="display: flex; gap: 20px; align-items: flex-start; margin-bottom: 10px;">
+                <div style="width: 32px; height: 32px; border-radius: 50%; background: #10b981; color: white; display: flex; align-items: center; justify-content: center; font-weight: 900; flex-shrink: 0; z-index: 2;">2</div>
+                <div style="flex: 1;">
+                    <h4 style="margin: 0 0 8px 0; font-size: 15px; color: #1e293b;">上传填好的文件</h4>
+                    <p style="font-size: 12px; color: #94a3b8; margin-bottom: 15px;">支持批量创建小组、同步初始积分。</p>
                     
-                    <div class="form-group">
-                        <label for="excel-file"><i class="fas fa-file-excel"></i> 选择Excel文件 *</label>
-                        <div class="file-upload">
-                            <input type="file" id="excel-file" accept=".xlsx,.xls" required
-                                   onchange="handleFileSelect(this)">
-                            <div class="file-info" id="file-info">
-                                <i class="fas fa-cloud-upload-alt"></i>
-                                <span>点击选择或拖拽Excel文件到此区域</span>
-                                <p class="file-hint">支持 .xlsx 和 .xls 格式</p>
-                            </div>
+                    <div style="position: relative; background: #f8fafc; border: 2px solid #edf2f7; border-radius: 16px; padding: 20px; text-align: center;">
+                        <input type="file" id="excelFile" accept=".xlsx" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;" onchange="updateFileName(this)">
+                        <div id="fileUploadHint">
+                            <i class="fas fa-cloud-upload-alt" style="font-size: 30px; color: #cbd5e1; margin-bottom: 10px;"></i>
+                            <div style="color: #64748b; font-size: 13px; font-weight: 600;">点击此处选择文件</div>
                         </div>
                     </div>
-                    
-                    <div class="form-group">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="auto-create-group" checked>
-                            <span>自动创建不存在的分组</span>
-                        </label>
-                    </div>
-                </form>
-                
-                <div class="import-progress" id="import-progress" style="display: none;">
-                    <h4><i class="fas fa-spinner fa-spin"></i> 正在导入...</h4>
-                    <div class="progress-bar">
-                        <div class="progress-fill" id="progress-fill"></div>
-                    </div>
-                    <div class="progress-text" id="progress-text">正在处理...</div>
-                </div>
-                
-                <div class="import-results" id="import-results" style="display: none;">
-                    <h4><i class="fas fa-check-circle"></i> 导入完成</h4>
-                    <div class="results-summary">
-                        <p>成功：<span id="success-count" class="success-count">0</span> 条</p>
-                        <p>失败：<span id="fail-count" class="fail-count">0</span> 条</p>
-                    </div>
-                    <div class="error-list" id="error-list">
-                        <!-- 错误列表将在这里显示 -->
-                    </div>
-                    <div class="results-actions">
-                        <button class="btn btn-primary" onclick="closeImportModalAndRefresh()">
-                            完成并刷新列表
-                        </button>
-                    </div>
                 </div>
             </div>
-        </div>
-        <div class="modal-footer form-actions"> <!-- 移到 modal-content 底部 -->
-            <button type="button" class="btn btn-secondary" onclick="closeImportModal()">取消</button>
-            <button type="button" class="btn btn-primary" onclick="importStudents()">
-                <i class="fas fa-upload"></i> 开始导入
+
+            <button class="btn btn-success" style="width:100%; margin-top:30px; height: 55px; border-radius: 18px; font-size: 16px; font-weight: 900; box-shadow: 0 10px 20px rgba(16, 185, 129, 0.2);" onclick="doImport()">
+                <i class="fas fa-check-circle"></i> 确认并开始同步名单
             </button>
         </div>
     </div>
 </div>
 
-<!-- 美化后的筛选工具栏 -->
-<div class="beauty-filter-bar">
-    <div class="beauty-filter-group">
-        <label class="beauty-filter-label">
-            <i class="fas fa-filter"></i>
-            班级筛选：
-        </label>
-        <select class="beauty-select" id="student-class-select" onchange="loadStudents()">
-            <option value="">所有班级</option>
-            <!-- 班级选项会动态加载 -->
-        </select>
-    </div>
-    
-    <div class="beauty-filter-group">
-        <button class="beauty-action-btn beauty-btn-all" onclick="selectAllStudents()">
-            <i class="fas fa-check-square"></i>
-            全选
-        </button>
-        <button class="beauty-action-btn beauty-btn-clear" onclick="deselectAllStudents()">
-            <i class="fas fa-times-circle"></i>
-            取消全选
-        </button>
-    </div>
-    
-    <div class="beauty-search-box">
-        <i class="fas fa-search"></i>
-        <input 
-            type="text" 
-            id="student-search" 
-            placeholder="搜索学生姓名或学号..." 
-            oninput="searchStudents()"
-        >
-    </div>
-</div>
 
-<!-- 美化后的学生表格 -->
-<div class="table-container">
-    <table class="beautify-table">
-        <thead>
-            <tr>
-                <th style="width: 60px;">
-                    <input 
-                        type="checkbox" 
-                        class="beauty-checkbox"
-                        id="select-all" 
-                        onchange="toggleSelectAll()"
-                    >
-                </th>
-                <th style="width: 80px;">序号</th>
-                <th style="width: 120px;">
-                    <i class="fas fa-id-card"></i>
-                    学号
-                </th>
-                <th style="width: 150px;">
-                    <i class="fas fa-user"></i>
-                    姓名
-                </th>
-                <th style="width: 120px;">
-                    <i class="fas fa-star"></i>
-                    当前积分
-                </th>
-                <th style="width: 180px;">
-                    <i class="fas fa-calendar-alt"></i>
-                    加入时间
-                </th>
-                <th style="width: 220px;">
-                    <i class="fas fa-cogs"></i>
-                    操作
-                </th>
-            </tr>
-        </thead>
-        <tbody id="students-table-body">
-            <!-- 学生数据会动态插入到这里 -->
-        </tbody>
-    </table>
-    
-    <!-- 美化后的分页控件 -->
-    <div class="beauty-pagination">
-        <button class="beauty-page-btn" onclick="previousPage()" id="prev-btn">
-            <i class="fas fa-chevron-left"></i>
-        </button>
-        
-        <span class="beauty-page-info" id="page-info">第 1 页</span>
-        
-        <button class="beauty-page-btn" onclick="nextPage()" id="next-btn">
-            <i class="fas fa-chevron-right"></i>
-        </button>
-        
-        <span class="beauty-page-info">
-            共 <span id="student-count">0</span> 名学生
-        </span>
-    </div>
-</div>
-
-<!-- 添加/编辑学生模态框 -->
-<div id="studentModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h2 id="studentModalTitle"><i class="fas fa-user-plus"></i> 添加学生</h2>
-            <span class="close" onclick="closeStudentModal()">&times;</span>
-        </div>
-        <div class="modal-body">
-            <form id="studentForm" onsubmit="saveStudent(event)">
-                <input type="hidden" id="studentId">
-                <div class="form-group">
-                    <label for="studentName"><i class="fas fa-user"></i> 姓名 *</label>
-                    <input type="text" id="studentName" required placeholder="请输入学生姓名">
-                </div>
-                <div class="form-group">
-                    <label for="studentNumber"><i class="fas fa-id-card"></i> 学号 *</label>
-                    <input type="text" id="studentNumber" required placeholder="请输入学号">
-                </div>
-                <div class="form-group">
-                    <label for="studentClass"><i class="fas fa-school"></i> 班级 *</label>
-                    <select id="studentClass" required>
-                        <option value="">请选择班级</option>
-                    </select>
-                </div>
-                <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeStudentModal()">取消</button>
-                    <button type="submit" class="btn btn-primary">保存</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- 学生详情模态框 -->
-<div id="studentDetailModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h2><i class="fas fa-user-circle"></i> 学生详情</h2>
-            <span class="close" onclick="closeStudentDetailModal()">&times;</span>
-        </div>
-        <div class="modal-body">
-            <div class="student-profile">
-                <div class="profile-header">
-                    <div class="profile-avatar">
-                        <i class="fas fa-user-graduate"></i>
-                    </div>
-                    <div class="profile-info">
-                        <h3 id="detail-name"></h3>
-                        <p><i class="fas fa-id-card"></i> 学号：<span id="detail-id"></span></p>
-                        <p><i class="fas fa-star"></i> 积分：<span id="detail-points"></span></p>
-                    </div>
-                </div>
-                
-                <div class="points-history">
-                    <h4><i class="fas fa-history"></i> 积分历史</h4>
-                    <div class="history-list" id="points-history">
-                        <!-- 积分历史将在这里显示 -->
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-let currentPage = 1;
-let studentsPerPage = 10;
-let allStudents = [];
+let allGroups = [], allStudents = [], currentGroupId = null;
 
-document.addEventListener('DOMContentLoaded', function() {
-    loadClassesForStudents();
-    loadStudents();
-});
+document.addEventListener('DOMContentLoaded', loadAllData);
 
-// 加载学生列表函数
-async function loadStudents() {
-    const classId = document.getElementById('student-class-select').value;
-    
-    if (!classId) {
-        allStudents = [];
-        renderStudentsTable();
-        return;
-    }
+async function loadAllData() {
+    try {
+        // 1. 获取系统信息 (班主任姓名)
+        const sysRes = await fetch('/api/system/info');
+        const sysData = await sysRes.json();
+        if (sysData) {
+            document.getElementById('teacherNameInput').value = sysData.teacher_name || '';
+        }
+
+        // 2. 获取小组和学生
+        const [gRes, sRes] = await Promise.all([fetch('/api/groups'), fetch('/api/students')]);
+        allGroups = await gRes.json();
+        allStudents = await sRes.json();
+        renderGroups();
+        renderStudents(allStudents);
+        updateGroupSelects();
+    } catch(e) { console.error(e); }
+}
+
+async function updateTeacherName(el) {
+    const newName = el.value.trim();
+    if (!newName) return;
     
     try {
-        const response = await fetch(`/api/classes/${classId}/students`);
-        allStudents = await response.json();
+        // 先获取现有班级名，确保不被覆盖
+        const infoRes = await fetch('/api/system/info');
+        const info = await infoRes.json();
         
-        currentPage = 1;
-        renderStudentsTable();
-    } catch (error) {
-        console.error('加载学生失败:', error);
-        if (typeof showToast === 'function') {
-            showToast('加载学生失败', 'error');
+        const res = await fetch('/api/system/setup', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ class_name: info.class_name, teacher_name: newName })
+        });
+        if (res.ok) {
+            // 提示成功并刷新导航栏
+            el.style.color = '#10b981';
+            setTimeout(() => { el.style.color = '#1e293b'; }, 1000);
+            if(window.fetchNavInfo) fetchNavInfo(); // 如果 base.html 的函数可用
         }
-    }
+    } catch(e) { console.error(e); }
 }
 
-// 渲染学生表格（使用美化样式）
-function renderStudentsTable() {
-    const tbody = document.getElementById('students-table-body');
-    const startIndex = (currentPage - 1) * studentsPerPage;
-    const endIndex = startIndex + studentsPerPage;
-    const pageStudents = allStudents.slice(startIndex, endIndex);
-    
-    tbody.innerHTML = '';
-    
-    if (pageStudents.length === 0) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="7" style="padding: 60px 20px;">
-                    <div class="beauty-empty-state">
-                        <i class="fas fa-users"></i>
-                        <p>暂无学生数据</p>
-                        <p style="font-size: 14px; margin-top: 10px; color: #a0aec0;">
-                            请先添加学生或选择其他班级
-                        </p>
-                    </div>
-                </td>
-            </tr>
+function renderGroups() {
+    const container = document.getElementById('groupListView');
+    if(!container) return;
+    let html = `<div class="group-card ${currentGroupId===null?'active':''}" onclick="filterByGroup(null)"><div class="group-info"><div class="group-dot" style="background:#64748b"></div><div class="group-name">全班名单</div></div><div class="group-count">${allStudents.length}人</div></div>`;
+    html += allGroups.map(g => `<div class="group-card ${currentGroupId===g.id?'active':''}" onclick="filterByGroup(${g.id})"><div class="group-info"><div class="group-dot" style="background:${g.color}"></div><div class="group-name">${g.name}</div></div><div style="display:flex;align-items:center;gap:8px;"><div class="group-count">${g.student_count||0}人</div><button onclick="event.stopPropagation();editGroup(${g.id},'${g.name}','${g.color}')" style="border:none;background:none;color:#cbd5e1;cursor:pointer;"><i class="fas fa-cog"></i></button></div></div>`).join('');
+    container.innerHTML = html;
+}
+
+function renderStudents(data) {
+    const tbody = document.getElementById('studentTableBody');
+    if(!tbody) return;
+    tbody.innerHTML = data.map(s => `<tr><td><div style="display:flex;align-items:center;gap:10px;"><div class="stu-avatar">${s.name?s.name[0]:'?'}</div><b>${s.name}</b></div></td><td style="color:#94a3b8;">${s.student_id}</td><td>${s.group_name?`<span class="group-tag" style="background:${s.group_color}15;color:${s.group_color}">${s.group_name}</span>`:'未分组'}</td><td><b style="color:var(--primary);font-size:16px;">${s.points}</b></td><td style="text-align:right;"><button onclick="editStudent(${s.id})" style="border:none;background:none;color:#6366f1;cursor:pointer;margin-right:10px;"><i class="fas fa-edit"></i></button><button onclick="deleteStudent(${s.id})" style="border:none;background:none;color:#cbd5e1;cursor:pointer;"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('') || '<tr><td colspan="5" style="text-align:center;padding:50px;color:#cbd5e1;">暂无名单</td></tr>';
+}
+
+function filterByGroup(gid) { currentGroupId = gid; renderGroups(); filterStudents(); }
+function filterStudents() {
+    const kw = document.getElementById('stuSearch').value.toLowerCase();
+    let res = allStudents;
+    if(currentGroupId !== null) res = res.filter(s => s.group_id === currentGroupId);
+    if(kw) res = res.filter(s => s.name.toLowerCase().includes(kw) || s.student_id.includes(kw));
+    renderStudents(res);
+}
+
+function updateGroupSelects() {
+    const s = document.getElementById('stuGroupSelect');
+    if(s) s.innerHTML = '<option value="">-- 未分组 --</option>' + allGroups.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
+}
+
+function showGroupModal() { document.getElementById('editGroupId').value=''; document.getElementById('groupNameInput').value=''; document.getElementById('groupModal').style.display='block'; }
+function editGroup(id, n, c) { document.getElementById('editGroupId').value=id; document.getElementById('groupNameInput').value=n; document.getElementById('groupColorInput').value=c; document.getElementById('groupModal').style.display='block'; }
+async function saveGroup() {
+    const id = document.getElementById('editGroupId').value;
+    const data = { name: document.getElementById('groupNameInput').value, color: document.getElementById('groupColorInput').value };
+    await fetch(id ? `/api/groups/${id}` : '/api/groups', { method: id?'PUT':'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+    closeModal('groupModal'); loadAllData();
+}
+
+function showAddStudentModal() { document.getElementById('editStuId').value=''; document.getElementById('stuNameInput').value=''; document.getElementById('stuCodeInput').value=''; document.getElementById('studentModal').style.display='block'; }
+function editStudent(id) { const s = allStudents.find(x => x.id === id); document.getElementById('editStuId').value=s.id; document.getElementById('stuNameInput').value=s.name; document.getElementById('stuCodeInput').value=s.student_id; document.getElementById('stuGroupSelect').value=s.group_id||''; document.getElementById('studentModal').style.display='block'; }
+async function saveStudent() {
+    const id = document.getElementById('editStuId').value;
+    const data = { name: document.getElementById('stuNameInput').value, student_id: document.getElementById('stuCodeInput').value, group_id: document.getElementById('stuGroupSelect').value || null };
+    await fetch(id ? `/api/students/${id}` : '/api/students', { method: id?'PUT':'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+    closeModal('studentModal'); loadAllData();
+}
+
+async function deleteStudent(id) { if(confirm('确定删除吗？')) { await fetch(`/api/students/${id}`, {method:'DELETE'}); loadAllData(); } }
+function downloadTemplate() { window.location.href = '/api/students/template'; }
+function showImportModal() { document.getElementById('importModal').style.display='block'; }
+function closeModal(id) { document.getElementById(id).style.display='none'; }
+
+function updateFileName(input) {
+    const hint = document.getElementById('fileUploadHint');
+    if (input.files && input.files[0]) {
+        hint.innerHTML = `
+            <i class="fas fa-file-excel" style="font-size: 30px; color: #10b981; margin-bottom: 10px;"></i>
+            <div style="color: #10b981; font-size: 13px; font-weight: 800;">已选择：${input.files[0].name}</div>
         `;
-    } else {
-        pageStudents.forEach((student, index) => {
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>
-                    <input 
-                        type="checkbox" 
-                        class="beauty-checkbox"
-                        id="table-student-${student.id}"
-                        onchange="toggleStudentSelection(${student.id}, this.checked)"
-                    >
-                </td>
-                <td>${startIndex + index + 1}</td>
-                <td>
-                    <strong>${student.student_id}</strong>
-                </td>
-                <td>
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <div class="student-avatar" style="width: 32px; height: 32px; font-size: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">
-                            ${student.name ? student.name.charAt(0) : '?'}
-                        </div>
-                        ${student.name}
-                    </div>
-                </td>
-                <td>
-                    <span class="beauty-points-badge" style="display: inline-block; padding: 6px 14px; background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); color: #2d3748; border-radius: 20px; font-weight: 600; font-size: 13px; box-shadow: 0 2px 8px rgba(168, 237, 234, 0.3); min-width: 50px; text-align: center; border: 1px solid rgba(255, 255, 255, 0.5);">
-                        ${student.points || 0}
-                        <span style="font-size: 12px; opacity: 0.8;">分</span>
-                    </span>
-                </td>
-                <td>
-                    <span style="color: #718096; font-size: 13px;">
-                        ${student.created_at ? formatDate(student.created_at) : '未知'}
-                    </span>
-                </td>
-                <td>
-                    <div class="beauty-action-buttons" style="display: flex; gap: 8px;">
-                        <button class="beauty-btn" style="width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: none; cursor: pointer; transition: all 0.3s ease; font-size: 14px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%); color: white;" 
-                                onclick="viewStudentDetails(${student.id})" 
-                                title="查看详情">
-                            <i class="fas fa-eye"></i>
-                        </button>
-                        <button class="beauty-btn" style="width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: none; cursor: pointer; transition: all 0.3s ease; font-size: 14px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); background: linear-gradient(135deg, #ffd166 0%, #f9a826 100%); color: white;" 
-                                onclick="editStudent(${student.id})" 
-                                title="编辑信息">
-                            <i class="fas fa-edit"></i>
-                        </button>
-                        <button class="beauty-btn" style="width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: none; cursor: pointer; transition: all 0.3s ease; font-size: 14px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); background: linear-gradient(135deg, #00b894 0%, #00a085 100%); color: white;" 
-                                onclick="showSinglePointsModal(${student.id})" 
-                                title="积分操作">
-                            <i class="fas fa-star"></i>
-                        </button>
-                        <button class="beauty-btn" style="width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: none; cursor: pointer; transition: all 0.3s ease; font-size: 14px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); background: linear-gradient(135deg, #ff7675 0%, #d63031 100%); color: white;" 
-                                onclick="deleteStudent(${student.id})" 
-                                title="删除学生">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
-                </td>
-            `;
-            tbody.appendChild(row);
-        });
-    }
-    
-    // 更新分页信息
-    updatePaginationInfo();
-}
-
-// 更新分页信息
-function updatePaginationInfo() {
-    const studentCount = document.getElementById('student-count');
-    const pageInfo = document.getElementById('page-info');
-    const prevBtn = document.getElementById('prev-btn');
-    const nextBtn = document.getElementById('next-btn');
-    
-    if (studentCount) studentCount.textContent = allStudents.length;
-    if (pageInfo) pageInfo.textContent = `第 ${currentPage} 页`;
-    
-    const totalPages = Math.ceil(allStudents.length / studentsPerPage);
-    if (prevBtn) prevBtn.disabled = currentPage <= 1;
-    if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
-}
-
-// 上一页
-function previousPage() {
-    if (currentPage > 1) {
-        currentPage--;
-        renderStudentsTable();
     }
 }
 
-// 下一页
-function nextPage() {
-    const totalPages = Math.ceil(allStudents.length / studentsPerPage);
-    if (currentPage < totalPages) {
-        currentPage++;
-        renderStudentsTable();
-    }
+async function doImport() {
+    const f = document.getElementById('excelFile').files[0]; if(!f) return alert('请选择文件');
+    const fd = new FormData(); fd.append('file', f);
+    await fetch('/api/students/import', { method:'POST', body:fd });
+    alert('导入成功'); closeModal('importModal'); loadAllData();
 }
-
-// 搜索学生
-function searchStudents() {
-    const searchTerm = document.getElementById('student-search').value.toLowerCase();
-    
-    if (!searchTerm) {
-        currentPage = 1;
-        renderStudentsTable();
-        return;
-    }
-    
-    const filteredStudents = allStudents.filter(student => 
-        student.name.toLowerCase().includes(searchTerm) || 
-        student.student_id.toLowerCase().includes(searchTerm)
-    );
-    
-    const tbody = document.getElementById('students-table-body');
-    tbody.innerHTML = '';
-    
-    if (filteredStudents.length === 0) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="7" style="padding: 60px 20px;">
-                    <div class="beauty-empty-state">
-                        <i class="fas fa-search"></i>
-                        <p>未找到匹配的学生</p>
-                    </div>
-                </td>
-            </tr>
-        `;
-    } else {
-        filteredStudents.forEach((student, index) => {
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>
-                    <input 
-                        type="checkbox" 
-                        class="beauty-checkbox"
-                        id="table-student-${student.id}"
-                        onchange="toggleStudentSelection(${student.id}, this.checked)"
-                    >
-                </td>
-                <td>${index + 1}</td>
-                <td><strong>${student.student_id}</strong></td>
-                <td>
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <div class="student-avatar" style="width: 32px; height: 32px; font-size: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">
-                            ${student.name ? student.name.charAt(0) : '?'}
-                        </div>
-                        ${student.name}
-                    </div>
-                </td>
-                <td>
-                    <span class="beauty-points-badge" style="display: inline-block; padding: 6px 14px; background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); color: #2d3748; border-radius: 20px; font-weight: 600; font-size: 13px; box-shadow: 0 2px 8px rgba(168, 237, 234, 0.3); min-width: 50px; text-align: center; border: 1px solid rgba(255, 255, 255, 0.5);">
-                        ${student.points || 0}
-                        <span style="font-size: 12px; opacity: 0.8;">分</span>
-                    </span>
-                </td>
-                <td>
-                    <span style="color: #718096; font-size: 13px;">
-                        ${student.created_at ? formatDate(student.created_at) : '未知'}
-                    </span>
-                </td>
-                <td>
-                    <div class="beauty-action-buttons" style="display: flex; gap: 8px;">
-                        <button class="beauty-btn" style="width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: none; cursor: pointer; transition: all 0.3s ease; font-size: 14px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%); color: white;" 
-                                onclick="viewStudentDetails(${student.id})" 
-                                title="查看详情">
-                            <i class="fas fa-eye"></i>
-                        </button>
-                        <button class="beauty-btn" style="width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: none; cursor: pointer; transition: all 0.3s ease; font-size: 14px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); background: linear-gradient(135deg, #ffd166 0%, #f9a826 100%); color: white;" 
-                                onclick="editStudent(${student.id})" 
-                                title="编辑信息">
-                            <i class="fas fa-edit"></i>
-                        </button>
-                        <button class="beauty-btn" style="width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: none; cursor: pointer; transition: all 0.3s ease; font-size: 14px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); background: linear-gradient(135deg, #00b894 0%, #00a085 100%); color: white;" 
-                                onclick="showSinglePointsModal(${student.id})" 
-                                title="积分操作">
-                            <i class="fas fa-star"></i>
-                        </button>
-                        <button class="beauty-btn" style="width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: none; cursor: pointer; transition: all 0.3s ease; font-size: 14px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); background: linear-gradient(135deg, #ff7675 0%, #d63031 100%); color: white;" 
-                                onclick="deleteStudent(${student.id})" 
-                                title="删除学生">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
-                </td>
-            `;
-            tbody.appendChild(row);
-        });
-    }
-    
-    const studentCount = document.getElementById('student-count');
-    if (studentCount) {
-        studentCount.textContent = `${filteredStudents.length} 名学生（已过滤）`;
-    }
-}
-
-// 全选学生
-function selectAllStudents() {
-    const checkboxes = document.querySelectorAll('#students-table-body input[type="checkbox"]');
-    checkboxes.forEach(cb => {
-        cb.checked = true;
-        const match = cb.id.match(/table-student-(\d+)/);
-        if (match) {
-            const studentId = parseInt(match[1]);
-            if (!window.selectedStudents) window.selectedStudents = new Set();
-            window.selectedStudents.add(studentId);
-        }
-    });
-    updateSelectAllCheckbox();
-}
-
-// 取消全选
-function deselectAllStudents() {
-    const checkboxes = document.querySelectorAll('#students-table-body input[type="checkbox"]');
-    checkboxes.forEach(cb => {
-        cb.checked = false;
-        const match = cb.id.match(/table-student-(\d+)/);
-        if (match) {
-            const studentId = parseInt(match[1]);
-            if (window.selectedStudents) {
-                window.selectedStudents.delete(studentId);
-            }
-        }
-    });
-    updateSelectAllCheckbox();
-}
-
-// 切换学生选择
-function toggleStudentSelection(studentId, isSelected) {
-    if (!window.selectedStudents) window.selectedStudents = new Set();
-    const id = Number(studentId);
-    if (isSelected) {
-        window.selectedStudents.add(id);
-    } else {
-        window.selectedStudents.delete(id);
-    }
-    updateSelectAllCheckbox();
-}
-
-// 更新全选复选框状态
-function updateSelectAllCheckbox() {
-    const selectAllCheckbox = document.getElementById('select-all');
-    if (!selectAllCheckbox) return;
-    
-    const checkboxes = document.querySelectorAll('#students-table-body input[type="checkbox"]');
-    if (checkboxes.length === 0) {
-        selectAllCheckbox.checked = false;
-        selectAllCheckbox.indeterminate = false;
-        return;
-    }
-    
-    const boxes = Array.from(checkboxes);
-    const allChecked = boxes.every(box => box.checked);
-    const someChecked = boxes.some(box => box.checked);
-    
-    selectAllCheckbox.checked = allChecked;
-    selectAllCheckbox.indeterminate = !allChecked && someChecked;
-}
-
-// 切换全选
-function toggleSelectAll() {
-    const selectAllCheckbox = document.getElementById('select-all');
-    if (!selectAllCheckbox) return;
-    
-    const isChecked = selectAllCheckbox.checked;
-    const checkboxes = document.querySelectorAll('#students-table-body input[type="checkbox"]');
-    
-    checkboxes.forEach(cb => {
-        cb.checked = isChecked;
-        const match = cb.id.match(/table-student-(\d+)/);
-        if (match) {
-            const studentId = parseInt(match[1]);
-            if (!window.selectedStudents) window.selectedStudents = new Set();
-            if (isChecked) {
-                window.selectedStudents.add(studentId);
-            } else {
-                window.selectedStudents.delete(studentId);
-            }
-        }
-    });
-}
-
-// 格式化日期
-function formatDate(dateString) {
-    if (!dateString) return '未知';
-    try {
-        const date = new Date(dateString);
-        return date.toLocaleDateString('zh-CN', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    } catch (error) {
-        return '未知';
-    }
-}
-
-// 页面加载完成后添加美化样式
-document.addEventListener('DOMContentLoaded', function() {
-    // 动态添加美化样式
-    setTimeout(function() {
-        if (!document.getElementById('beautify-styles')) {
-            const style = document.createElement('style');
-            style.id = 'beautify-styles';
-            style.textContent = `
-                .beauty-filter-bar {
-                    background: white;
-                    padding: 20px;
-                    border-radius: 16px;
-                    margin-bottom: 24px;
-                    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
-                    display: flex;
-                    flex-wrap: wrap;
-                    gap: 16px;
-                    align-items: center;
-                }
-                
-                .beauty-filter-group {
-                    display: flex;
-                    align-items: center;
-                    gap: 10px;
-                }
-                
-                .beauty-filter-label {
-                    font-weight: 600;
-                    color: #4a5568;
-                    font-size: 14px;
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
-                }
-                
-                .beauty-filter-label i {
-                    color: #667eea;
-                }
-                
-                .beauty-select {
-                    padding: 10px 16px;
-                    border: 2px solid #e2e8f0;
-                    border-radius: 12px;
-                    background: white;
-                    font-size: 14px;
-                    color: #2d3748;
-                    min-width: 180px;
-                    cursor: pointer;
-                    transition: all 0.3s ease;
-                    outline: none;
-                }
-                
-                .beauty-select:focus {
-                    border-color: #667eea;
-                    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-                }
-                
-                .beauty-action-btn {
-                    padding: 10px 22px;
-                    border: none;
-                    border-radius: 12px;
-                    font-weight: 600;
-                    font-size: 14px;
-                    cursor: pointer;
-                    transition: all 0.3s ease;
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 8px;
-                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-                }
-                
-                .beauty-action-btn:hover {
-                    transform: translateY(-2px);
-                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-                }
-                
-                .beauty-btn-all {
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    color: white;
-                }
-                
-                .beauty-btn-clear {
-                    background: linear-gradient(135deg, #f7f9fc 0%, #e2e8f0 100%);
-                    color: #4a5568;
-                    border: 1px solid #cbd5e0;
-                }
-                
-                .beauty-search-box {
-                    flex: 1;
-                    position: relative;
-                    min-width: 280px;
-                }
-                
-                .beauty-search-box input {
-                    width: 100%;
-                    padding: 12px 16px 12px 48px;
-                    border: 2px solid #e2e8f0;
-                    border-radius: 12px;
-                    font-size: 14px;
-                    transition: all 0.3s ease;
-                    background: white;
-                }
-                
-                .beauty-search-box input:focus {
-                    border-color: #667eea;
-                    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-                    outline: none;
-                }
-                
-                .beauty-search-box i {
-                    position: absolute;
-                    left: 16px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    color: #a0aec0;
-                    font-size: 16px;
-                }
-                
-                .beautify-table {
-                    width: 100%;
-                    border-collapse: separate;
-                    border-spacing: 0;
-                    border-radius: 16px;
-                    overflow: hidden;
-                    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-                    background: white;
-                    font-size: 14px;
-                }
-                
-                .beautify-table thead {
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                }
-                
-                .beautify-table th {
-                    padding: 16px 20px;
-                    color: white;
-                    font-weight: 600;
-                    text-align: left;
-                    border: none;
-                    position: relative;
-                }
-                
-                .beautify-table th:not(:last-child)::after {
-                    content: '';
-                    position: absolute;
-                    right: 0;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    height: 60%;
-                    width: 1px;
-                    background: rgba(255, 255, 255, 0.3);
-                }
-                
-                .beautify-table tbody tr {
-                    transition: all 0.2s ease;
-                    border-bottom: 1px solid #f0f0f0;
-                }
-                
-                .beautify-table tbody tr:last-child {
-                    border-bottom: none;
-                }
-                
-                .beautify-table tbody tr:hover {
-                    background-color: #f8f9ff;
-                    transform: translateY(-1px);
-                }
-                
-                .beautify-table td {
-                    padding: 14px 20px;
-                    color: #333;
-                    vertical-align: middle;
-                }
-                
-                .beauty-checkbox {
-                    width: 20px;
-                    height: 20px;
-                    border-radius: 6px;
-                    border: 2px solid #cbd5e0;
-                    background: white;
-                    cursor: pointer;
-                    transition: all 0.3s ease;
-                    position: relative;
-                    appearance: none;
-                    -webkit-appearance: none;
-                }
-                
-                .beauty-checkbox:checked {
-                    background: #667eea;
-                    border-color: #667eea;
-                }
-                
-                .beauty-checkbox:checked::after {
-                    content: '✓';
-                    position: absolute;
-                    color: white;
-                    font-size: 14px;
-                    font-weight: bold;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                }
-                
-                .beauty-empty-state {
-                    text-align: center;
-                    padding: 60px 20px;
-                    color: #718096;
-                }
-                
-                .beauty-empty-state i {
-                    font-size: 64px;
-                    margin-bottom: 20px;
-                    opacity: 0.3;
-                    color: #667eea;
-                }
-                
-                .beauty-empty-state p {
-                    font-size: 16px;
-                    margin: 0;
-                    font-weight: 500;
-                }
-                
-                .beauty-pagination {
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    gap: 8px;
-                    padding: 20px;
-                    background: white;
-                    border-radius: 16px;
-                    margin-top: 24px;
-                    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
-                }
-                
-                .beauty-page-btn {
-                    width: 40px;
-                    height: 40px;
-                    border-radius: 12px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    background: #f7fafc;
-                    border: 1px solid #e2e8f0;
-                    color: #4a5568;
-                    cursor: pointer;
-                    transition: all 0.3s ease;
-                    font-weight: 600;
-                    border: none;
-                }
-                
-                .beauty-page-btn:hover:not(:disabled) {
-                    background: #667eea;
-                    color: white;
-                    border-color: #667eea;
-                }
-                
-                .beauty-page-btn:disabled {
-                    opacity: 0.5;
-                    cursor: not-allowed;
-                }
-                
-                .beauty-page-info {
-                    font-size: 14px;
-                    color: #4a5568;
-                    font-weight: 600;
-                    margin: 0 16px;
-                }
-                
-                @media (max-width: 768px) {
-                    .beauty-filter-bar {
-                        flex-direction: column;
-                        align-items: stretch;
-                    }
-                    
-                    .beauty-filter-group {
-                        width: 100%;
-                    }
-                    
-                    .beauty-select {
-                        width: 100%;
-                    }
-                    
-                    .beauty-search-box {
-                        min-width: 100%;
-                    }
-                    
-                    .beautify-table th,
-                    .beautify-table td {
-                        padding: 12px 16px;
-                    }
-                }
-            `;
-            document.head.appendChild(style);
-            console.log('美化样式已加载');
-        }
-    }, 100);
-});
 </script>
 {% endblock %}

@@ -1,1920 +1,301 @@
 {% extends "base.html" %}
 
-{% block title %}积分管理 - 极速版{% endblock %}
+{% block title %}极速积分台{% endblock %}
 
 {% block content %}
 <style>
-    /* === 页面布局 === */
-    .page-container {
-        max-width: 1400px;
-        margin: 0 auto;
-    }
-
-    /* 顶部控制栏 */
-    .top-bar {
-        background: white;
-        padding: 15px 20px;
-        border-radius: 16px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.03);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 20px;
-        flex-wrap: wrap;
-        gap: 15px;
-    }
-
-    .class-select {
-        padding: 10px 15px;
-        border: 2px solid #e2e8f0;
-        border-radius: 10px;
-        font-size: 16px;
-        font-weight: 600;
-        color: #2d3748;
-        min-width: 200px;
-        background-color: #f8fafc;
-        cursor: pointer;
-    }
+    .points-container { display: grid; grid-template-columns: 260px 1fr; gap: 25px; margin-top: 10px; }
     
-    .search-box {
-        position: relative;
-        flex: 1;
-        max-width: 400px;
+    /* 左侧小组导航 */
+    .filter-panel { background: white; border-radius: 24px; padding: 25px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); height: fit-content; position: sticky; top: 90px; }
+    .filter-panel h3 { margin: 0 0 20px 0; font-size: 1.1rem; font-weight: 800; color: var(--text-main); }
+    .group-nav { display: flex; flex-direction: column; gap: 10px; }
+    .nav-item { 
+        padding: 14px 18px; border-radius: 16px; border: 1px solid #f1f5f9; cursor: pointer; 
+        display: flex; align-items: center; justify-content: space-between; transition: all 0.2s;
+        background: white; color: #64748b; border-left: 4px solid transparent;
     }
+    .nav-item:hover { background: #f8faff; border-color: var(--primary); }
+    .nav-item.active { background: #f0f4ff; color: var(--primary); border-color: #e0e7ff; border-left: 5px solid var(--primary); }
+    .nav-dot { width: 8px; height: 8px; border-radius: 50%; background: #cbd5e1; }
+    .active .nav-dot { background: var(--primary) !important; transform: scale(1.2); }
+    .active b { color: var(--primary) !important; font-weight: 900; }
+
+    /* 右侧卡片墙 */
+    .work-panel { display: flex; flex-direction: column; gap: 20px; }
+    .search-bar { background: white; padding: 15px 25px; border-radius: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); display: flex; gap: 15px; align-items: center; }
+    .search-box { position: relative; flex: 1; }
+    .search-box i { position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: #cbd5e1; }
+    .search-box input { width: 100%; padding: 10px 15px 10px 40px; border: 2px solid #f1f5f9; border-radius: 12px; outline: none; transition: 0.2s; }
+    .search-box input:focus { border-color: var(--primary); }
+
+    .student-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
+    .student-card { background: white; border-radius: 24px; padding: 20px; border: 1px solid #f1f5f9; position: relative; transition: all 0.3s; }
+    .student-card:hover { transform: translateY(-5px); box-shadow: 0 12px 25px rgba(0,0,0,0.05); border-color: var(--primary); }
+    .points-badge { position: absolute; top: 15px; right: 15px; font-weight: 900; font-size: 22px; color: var(--primary); background: #f0f4ff; padding: 4px 12px; border-radius: 10px; }
+    .stu-name { font-weight: 800; font-size: 17px; margin-bottom: 5px; }
+    .stu-id { font-size: 12px; color: #94a3b8; font-family: monospace; }
+
+    .quick-btns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 15px; }
+    .q-btn { border: none; padding: 10px 0; border-radius: 10px; font-weight: 800; font-size: 14px; cursor: pointer; }
+    .q-p1 { background: #f0fdf4; color: #10b981; }
+    .q-p2 { background: #eff6ff; color: #3b82f6; }
+    .q-m1 { background: #fef2f2; color: #ef4444; }
+    .q-more { background: #f8fafc; color: #64748b; grid-column: span 3; font-size: 12px; border: 1px solid #edf2f7; }
+
+    /* === 统一高级模态框 UI === */
+    .premium-modal { border-radius: 35px !important; overflow: hidden; border: none !important; }
+    .modal-hero { background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); padding: 30px; color: white; text-align: center; position: relative; }
+    .modal-hero h3 { margin: 0; font-size: 20px; font-weight: 900; }
+    .modal-hero.batch { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
     
-    .search-box input {
-        width: 100%;
-        padding: 10px 15px 10px 40px;
-        border: 2px solid #e2e8f0;
-        border-radius: 10px;
-        font-size: 15px;
-        transition: all 0.2s;
-    }
+    .selector-card { background: #f8fafc; border-radius: 20px; padding: 20px; border: 1px solid #edf2f7; margin-bottom: 15px; }
+    .selector-card label { display: block; font-size: 11px; font-weight: 900; color: #cbd5e1; text-transform: uppercase; margin-bottom: 8px; }
     
-    .search-box input:focus {
-        border-color: #667eea;
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        outline: none;
-    }
+    .premium-input { width: 100%; border: 2px solid transparent; background: white; padding: 12px; border-radius: 14px; font-weight: 700; color: #1e293b; outline: none; transition: 0.2s; font-size: 14px; }
+    .premium-input:focus { border-color: #6366f1; }
+
+    .score-display { text-align: center; padding: 15px; background: white; border-radius: 18px; border: 2px solid #f1f5f9; display: flex; align-items: center; justify-content: center; gap: 10px; }
+    .score-num { font-size: 32px; font-weight: 900; color: var(--primary); }
+    .score-label { font-size: 12px; font-weight: 800; color: #94a3b8; text-align: left; }
+
+    .btn-confirm { width: 100%; height: 55px; background: #1e293b; color: white; border: none; border-radius: 18px; font-size: 17px; font-weight: 900; cursor: pointer; transition: 0.3s; }
+    .btn-confirm:hover { transform: translateY(-3px); box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
+
+    .tab-box { display: flex; background: #f1f5f9; padding: 4px; border-radius: 12px; }
+    .tab-btn { flex: 1; border: none; padding: 8px; border-radius: 9px; cursor: pointer; font-size: 12px; font-weight: 700; background: transparent; }
+    .tab-btn.active { background: white; color: var(--primary); }
     
-    .search-box i {
-        position: absolute;
-        left: 14px;
-        top: 50%;
-        transform: translateY(-50%);
-        color: #a0aec0;
+    .select-list { border: 2px solid #f1f5f9; border-radius: 16px; max-height: 180px; overflow-y: auto; padding: 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px; background: white; }
+    .list-item { 
+        padding: 8px 5px; text-align: center; border-radius: 8px; 
+        background: #f8fafc; font-size: 12px; font-weight: 600; cursor: pointer;
+        display: flex; align-items: center; justify-content: center; /* 强力居中 */
+        min-height: 32px;
     }
-
-    /* === 卡片网格布局 === */
-    .student-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-        gap: 20px;
-    }
-
-    /* 学生卡片设计 */
-    .student-card {
-        background: white;
-        border-radius: 16px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.02);
-        padding: 20px;
-        transition: transform 0.2s, box-shadow 0.2s;
-        border: 1px solid #f1f5f9;
-        position: relative;
-        overflow: hidden;
-    }
-
-    .student-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 10px 15px rgba(0,0,0,0.05);
-        border-color: #e2e8f0;
-    }
-    
-    /* 积分大数字 */
-    .points-badge {
-        position: absolute;
-        top: 15px;
-        right: 15px;
-        font-size: 24px;
-        font-weight: 800;
-        color: #2b6cb0;
-        background: #ebf8ff;
-        padding: 5px 15px;
-        border-radius: 12px;
-        min-width: 60px;
-        text-align: center;
-    }
-
-    .student-info {
-        margin-bottom: 20px;
-    }
-
-    .student-name {
-        font-size: 18px;
-        font-weight: 700;
-        color: #2d3748;
-        margin-bottom: 4px;
-    }
-
-    .student-meta {
-        font-size: 13px;
-        color: #718096;
-        display: flex;
-        gap: 10px;
-        align-items: center;
-    }
-    
-    .group-tag {
-        display: inline-block;
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-    }
-
-    /* 快捷按钮区 */
-    .quick-actions {
-        display: grid;
-        grid-template-columns: 1fr 1fr 1fr;
-        gap: 8px;
-        margin-top: 15px;
-    }
-
-    .btn-quick {
-        border: none;
-        border-radius: 8px;
-        padding: 8px 0;
-        font-weight: 700;
-        font-size: 14px;
-        cursor: pointer;
-        transition: all 0.1s;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .btn-quick:active {
-        transform: scale(0.95);
-    }
-
-    .btn-p1 { background: #f0fff4; color: #2f855a; border: 1px solid #c6f6d5; }
-    .btn-p1:hover { background: #dcffe4; }
-
-    .btn-p2 { background: #ebf8ff; color: #2b6cb0; border: 1px solid #bee3f8; }
-    .btn-p2:hover { background: #bee3f8; }
-
-    .btn-m1 { background: #fff5f5; color: #c53030; border: 1px solid #fed7d7; }
-    .btn-m1:hover { background: #fed7d7; }
-    
-    .btn-more { background: #edf2f7; color: #4a5568; border: 1px solid #e2e8f0; grid-column: span 3; margin-top: 4px;}
-    .btn-more:hover { background: #e2e8f0; }
-
-    /* 动画效果 */
-    @keyframes pop {
-        0% { transform: scale(1); }
-        50% { transform: scale(1.2); }
-        100% { transform: scale(1); }
-    }
-    
-    .pop-anim {
-        animation: pop 0.3s ease-out;
-    }
-
-    /* 响应式调整 */
-    @media (max-width: 768px) {
-        .top-bar { 
-            padding: 15px; 
-            flex-direction: column !important; 
-            align-items: stretch !important; 
-            gap: 12px;
-            width: 100% !important;
-            box-sizing: border-box;
-        }
-        .class-select { width: 100% !important; min-width: 0 !important; }
-        .search-box { max-width: none !important; width: 100% !important; }
-        .search-box input { width: 100% !important; }
-        
-        .student-grid {
-            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) !important;
-            gap: 10px !important;
-            padding: 0 5px;
-        }
-        .modal-content { width: 95% !important; padding: 15px !important; }
-    }
-
-    @media (max-width: 480px) {
-        .student-grid {
-            grid-template-columns: 1fr 1fr !important; /* 强制两列 */
-        }
-        .student-card { padding: 12px !important; }
-        .student-name { font-size: 15px !important; }
-        .points-badge { font-size: 18px !important; padding: 2px 8px !important; top: 8px !important; right: 8px !important; min-width: auto !important; }
-        .btn-quick { padding: 5px 0 !important; font-size: 12px !important; }
-    }
-    
-    /* 快速打卡模态框样式 (复用原有风格但简化) */
-    .modal-body-grid {
-        display: grid;
-        grid-template-columns: 260px 1fr;
-        height: 500px;
-        gap: 20px;
-    }
-    
-    /* 复用之前的选择器样式 */
-    .selector-panel { border: 1px solid #e2e8f0; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; }
-    .selector-content { flex: 1; overflow-y: auto; padding: 10px; }
-    .select-item { display: flex; align-items: center; padding: 8px 10px; margin-bottom: 2px; cursor: pointer; border-radius: 6px; }
-    .select-item:hover { background: #f7fafc; }
-    
+    .list-item.selected { background: #eef2ff; border: 1px solid #6366f1; color: #6366f1; }
 </style>
 
-<div class="page-container">
-    <!-- 顶部工具栏 -->
-    <div class="top-bar">
-        <div style="display: flex; gap: 15px; align-items: center; flex: 1;">
-            <select id="classSelect" class="class-select" onchange="loadData()">
-                <option value="">加载班级...</option>
-            </select>
-            
-            <div class="search-box">
-                <i class="fas fa-search"></i>
-                <input type="text" id="searchInput" placeholder="搜索学生姓名..." oninput="filterCards()">
-            </div>
-        </div>
+<div class="points-container">
+    <div class="filter-panel">
+        <h3>全班分组</h3>
+        <div id="groupNav" class="group-nav"></div>
+    </div>
 
-        <div>
-            <!-- 审核按钮 -->
-            <button class="btn" onclick="openAuditModal()" style="margin-right: 10px; background: white; border: 1px solid #e2e8f0; color: #4a5568; position: relative; border-radius: 10px; padding: 10px 15px; font-weight: 600;">
-                <i class="fas fa-bell"></i> 审核
-                <span id="auditBadge" style="display: none; position: absolute; top: -5px; right: -5px; background: #f56565; color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 10px; display: flex; align-items: center; justify-content: center; border: 2px solid white;">0</span>
+    <div class="work-panel">
+        <div class="search-bar">
+            <div class="search-box"><i class="fas fa-search"></i><input type="text" id="stuSearch" placeholder="搜索学生..." oninput="renderGrid()"></div>
+            <button class="btn btn-warning" onclick="openBatchModal()" style="background:linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color:white; border:none; padding:10px 20px; border-radius:12px; font-weight:800; cursor:pointer;">
+                <i class="fas fa-layer-group"></i> 批量变更
             </button>
-
-            <button class="btn btn-warning" onclick="openQuickCheckInModal()" 
-                    style="padding: 10px 20px; font-weight: bold; background: #ed8936; color: white; border: none; border-radius: 10px; box-shadow: 0 4px 6px rgba(237, 137, 54, 0.2);">
-                <i class="fas fa-bolt"></i> 快速打卡
-            </button>
+            <div style="font-size: 13px; color: #94a3b8; font-weight: 700;">共 <span id="displayCount">0</span> 人</div>
         </div>
-    </div>
-
-    <!-- 学生卡片网格 -->
-    <div id="studentGrid" class="student-grid">
-        <!-- 卡片由 JS 生成 -->
+        <div id="studentGrid" class="student-grid"></div>
     </div>
 </div>
 
-<!-- 审核模态框 -->
-<div id="auditModal" class="modal">
-    <div class="modal-content" style="max-width: 650px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column; border-radius: 20px;">
-        <div class="modal-header" style="border-bottom: 1px solid #f1f5f9; padding: 20px 25px; display: flex; justify-content: space-between; align-items: center;">
-            <h2 style="margin: 0; font-size: 1.3rem; color: #1e293b; display: flex; align-items: center; gap: 10px;">
-                <i class="fas fa-clipboard-check" style="color: #6366f1;"></i> 待办审批
-            </h2>
-            <div style="display: flex; align-items: center; gap: 15px;">
-                <label style="display: flex; align-items: center; gap: 5px; font-size: 14px; color: #64748b; cursor: pointer;">
-                    <input type="checkbox" id="auditSelectAll" onchange="toggleAllAudits(this.checked)" style="width: 16px; height: 16px;"> 全选
-                </label>
-                <span class="close" onclick="closeModal('auditModal')" style="position: static;">&times;</span>
-            </div>
+<!-- 弹窗 A: 单人自定义变更 -->
+<div id="standardPointsModal" class="modal">
+    <div class="modal-content premium-modal" style="max-width: 450px;">
+        <div class="modal-hero">
+            <h3 id="modalTitle">积分变更中心</h3>
+            <p id="targetStuName">正在录入</p>
+            <span class="close" onclick="closeModal('standardPointsModal')" style="color:white; top:20px; right:20px; opacity:0.5;">&times;</span>
         </div>
-        <div class="modal-body" style="flex: 1; overflow-y: auto; padding: 0;">
-            <div id="auditList" style="display: flex; flex-direction: column;">
-                <!-- JS 动态生成 -->
-            </div>
-        </div>
-        <div id="auditFooter" style="padding: 15px 25px; border-top: 1px solid #f1f5f9; display: none; justify-content: flex-end; gap: 12px; background: #f8fafc;">
-            <span id="auditSelectedHint" style="flex: 1; align-self: center; font-size: 13px; color: #64748b;">已选择 0 项</span>
-            <button onclick="batchProcessAudits('reject')" style="background: white; color: #ef4444; border: 1px solid #fee2e2; padding: 10px 20px; border-radius: 10px; font-weight: 600; cursor: pointer;">批量拒绝</button>
-            <button onclick="batchProcessAudits('approve')" style="background: #6366f1; color: white; border: none; padding: 10px 25px; border-radius: 10px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 10px rgba(99, 102, 241, 0.2);">一键通过审批</button>
-        </div>
-    </div>
-</div>
-
-<!-- 自定义分数模态框 -->
-<div id="customScoreModal" class="modal">
-    <div class="modal-content" style="max-width: 400px; border-radius: 16px;">
-        <div class="modal-header" style="border-bottom: none; padding-bottom: 0;">
-            <h2 style="font-size: 1.2rem; margin: 0; color: #2d3748;">
-                <i class="fas fa-edit" style="color: #667eea; margin-right: 8px;"></i>
-                给 <span id="customStudentName" style="color: #667eea;"></span> 加/减分
-            </h2>
-            <span class="close" onclick="closeModal('customScoreModal')">&times;</span>
-        </div>
-        <div class="modal-body">
-            <div style="margin-bottom: 20px;">
-                <label style="display: block; font-size: 14px; color: #718096; margin-bottom: 8px;">分数 (负数代表减分)</label>
-                <input type="number" id="customPoints" class="form-control" placeholder="例如: 5 或 -5" 
-                       style="font-size: 18px; font-weight: bold; text-align: center; padding: 12px; border: 2px solid #e2e8f0; border-radius: 10px; width: 100%; box-sizing: border-box;">
-            </div>
-            
-            <div style="margin-bottom: 25px;">
-                <label style="display: block; font-size: 14px; color: #718096; margin-bottom: 8px;">理由 (可选)</label>
-                <input type="text" id="customReason" class="form-control" placeholder="例如: 协助老师工作" 
-                       style="padding: 10px; border: 1px solid #e2e8f0; border-radius: 8px; width: 100%; box-sizing: border-box;">
-            </div>
-            
-            <button onclick="submitCustomScore()" style="width: 100%; background: #667eea; color: white; border: none; padding: 12px; border-radius: 10px; font-weight: bold; font-size: 16px; cursor: pointer; transition: background 0.2s;">
-                确认提交
-            </button>
-        </div>
-    </div>
-</div>
-
-<!-- 快速打卡模态框 (保留功能，优化样式) -->
-<div id="quickCheckInModal" class="modal">
-    <div class="modal-content" style="max-width: 900px; width: 95%;">
-        <div class="modal-header" style="background: linear-gradient(135deg, #f6ad55 0%, #ed8936 100%); color: white;">
-            <h2 style="margin: 0; font-size: 1.2rem;"><i class="fas fa-bolt"></i> 批量快速打卡</h2>
-            <span class="close" onclick="closeModal('quickCheckInModal')" style="color: white; opacity: 0.8;">&times;</span>
-        </div>
-        <div class="modal-body modal-body-grid">
-            <!-- 左侧：事件类型 -->
-            <div class="selector-panel">
-                <div style="padding: 15px; background: #fffaf0; border-bottom: 1px solid #fbd38d; color: #c05621; font-weight: bold;">
-                    1. 选择事件
+        <div class="modal-body" style="padding: 25px; background: white;">
+            <input type="hidden" id="targetId">
+            <div class="selector-card">
+                <label>选择业务标准</label>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                    <select id="areaSelect" class="premium-input" onchange="updateCats('areaSelect','catSelect','itemSelect','finalPts')"></select>
+                    <select id="catSelect" class="premium-input" onchange="updateItems('areaSelect','catSelect','itemSelect','finalPts')"></select>
                 </div>
-                <div id="quickActionsList" style="padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;">
-                    <!-- JS 生成 -->
-                </div>
+                <select id="itemSelect" class="premium-input" onchange="applyStandardPts('itemSelect','finalPts','finalPtsDisplay')"></select>
             </div>
+            <div style="display: grid; grid-template-columns: 120px 1fr; gap: 15px; margin-bottom: 20px;">
+                <div class="score-display"><div class="score-num" id="finalPtsDisplay">+0</div><input type="hidden" id="finalPts"></div>
+                <textarea id="finalNote" class="premium-input" style="height: 70px; resize: none;" placeholder="备注说明..."></textarea>
+            </div>
+            <button class="btn-confirm" onclick="doStandardSubmit()">确认并同步档案</button>
+        </div>
+    </div>
+</div>
 
-            <!-- 右侧：选择学生/分组 -->
-            <div class="selector-panel">
-                <div style="padding: 10px 15px; background: #fffaf0; border-bottom: 1px solid #fbd38d;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                        <span style="font-weight: bold; color: #c05621;">2. 确认名单 (<span id="selectedCount">0</span>)</span>
-                        <div style="display: flex; background: #feebc8; padding: 2px; border-radius: 8px;">
-                            <button id="tab-student" class="btn-tab active" onclick="switchQuickTab('student')" style="border:none; padding:4px 12px; border-radius:6px; font-size:12px; cursor:pointer; font-weight:bold;">按学生</button>
-                            <button id="tab-group" class="btn-tab" onclick="switchQuickTab('group')" style="border:none; padding:4px 12px; border-radius:6px; font-size:12px; cursor:pointer; font-weight:bold; background:transparent; color:#c05621;">按小组</button>
-                        </div>
+<!-- 弹窗 B: 批量规则变更 -->
+<div id="batchModal" class="modal">
+    <div class="modal-content premium-modal" style="max-width: 600px;">
+        <div class="modal-hero batch">
+            <h3>批量积分同步</h3>
+            <p>请选择业务标准及适用对象</p>
+            <span class="close" onclick="closeModal('batchModal')" style="color:white; top:20px; right:20px; opacity:0.5;">&times;</span>
+        </div>
+        <div class="modal-body" style="padding: 25px; background: white;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <!-- 规则选择 -->
+                <div>
+                    <div class="selector-card">
+                        <label>1. 业务标准</label>
+                        <select id="bArea" class="premium-input" style="margin-bottom:8px;" onchange="updateCats('bArea','bCat','bItem','bPts')"></select>
+                        <select id="bCat" class="premium-input" style="margin-bottom:8px;" onchange="updateItems('bArea','bCat','bItem','bPts')"></select>
+                        <select id="bItem" class="premium-input" onchange="applyStandardPts('bItem','bPts','bPtsDisp')"></select>
                     </div>
-                    <div style="display: flex; gap: 10px;">
-                        <input type="text" id="quickSearchInput" placeholder="搜索姓名/小组..." oninput="renderSelectorList()" style="flex:1; padding:6px 10px; border:1px solid #fbd38d; border-radius:6px; font-size:13px;">
-                        <button onclick="toggleSelectAll()" style="background: white; border: 1px solid #ed8936; color: #ed8936; padding: 2px 8px; border-radius: 6px; font-size: 12px; cursor: pointer; white-space: nowrap;">全选/反选</button>
-                    </div>
+                    <div class="score-display" style="margin-bottom:15px;"><div class="score-num" id="bPtsDisp">+0</div><input type="hidden" id="bPts"></div>
+                    <input type="text" id="bNote" class="premium-input" placeholder="批量备注...">
                 </div>
-                <div id="studentSelectorList" class="selector-content">
-                    <!-- JS 生成 -->
-                </div>
-                
-                <div style="padding: 15px; border-top: 1px solid #e2e8f0; display: flex; align-items: center; gap: 15px; background: #fffaf0;">
-                    <div id="batchCustomInputArea" style="display: flex; flex: 1; gap: 10px; align-items: center;">
-                        <input type="number" id="batchCustomPoints" placeholder="分值" style="width: 90px; padding: 10px; border: 2px solid #e2e8f0; border-radius: 10px; text-align: center; font-weight: bold; background: white; outline: none;">
-                        <input type="text" id="batchCustomReason" placeholder="请输入理由..." style="flex: 1; padding: 10px; border: 1px solid #e2e8f0; border-radius: 10px; background: white; outline: none;">
-                    </div>
-                    <button class="btn" onclick="submitBatch()" style="background: #ed8936; color: white; padding: 12px 30px; border: none; border-radius: 12px; font-weight: bold; white-space: nowrap; box-shadow: 0 4px 6px rgba(237, 137, 54, 0.2); cursor: pointer;">
-                        确认提交
-                    </button>
+                <!-- 选人区 -->
+                <div style="display:flex; flex-direction:column;">
+                    <label style="font-size: 11px; font-weight: 900; color: #cbd5e1; margin-bottom: 8px;">2. 适用对象 (<span id="bCount">0</span>)</label>
+                    <div class="tab-box" style="margin-bottom:10px;"><button id="btStu" class="tab-btn active" onclick="switchBTab('student')">选学生</button><button id="btGrp" class="tab-btn" onclick="switchBTab('group')">选小组</button></div>
+                    <div id="bList" class="select-list" style="flex:1;"></div>
                 </div>
             </div>
+            <button class="btn-confirm" style="margin-top:20px; background:#d97706;" onclick="doBatchSubmit()">执行全员数据同步</button>
         </div>
     </div>
 </div>
 
+{% endblock %}
+
+{% block scripts %}
 <script>
-    // === 全局状态 ===
-    let allStudents = [];
-    let allGroups = [];
-    let currentClassId = null;
-    let selectedStudentIds = new Set();
-    let quickTab = 'student'; // 'student' or 'group'
+let students = [], groups = [], rawStandards = [], currentGroupId = null;
+let bTab = 'student', bSelectedIds = new Set();
 
-    
-        // === 预设打卡事件 ===
-    
-        const QUICK_EVENTS = [
-    
-            { id: 'good_hw', name: '作业优秀', points: 2, icon: '📚' },
-    
-            { id: 'active', name: '积极回答', points: 1, icon: '🙋' },
-    
-            { id: 'discipline', name: '纪律标兵', points: 1, icon: '🤐' },
-    
-            { id: 'cleaning', name: '卫生负责', points: 2, icon: '🧹' },
-    
-            { id: 'progress', name: '进步明显', points: 2, icon: '📈' },
-    
-            { id: 'late', name: '迟到', points: -2, icon: '⏰' },
-    
-            { id: 'chat', name: '闲聊/走神', points: -1, icon: '🤫' },
-    
-            { id: 'no_hw', name: '未交作业', points: -2, icon: '❌' },
-    
-            { id: 'custom', name: '自定义', points: 0, icon: '✨' }
-    
-        ];
-    
-        let currentEvent = QUICK_EVENTS[0];
-    
-    
-    
-        // === 初始化 ===
-    
-        document.addEventListener('DOMContentLoaded', () => {
-    
-            loadClasses();
-    
-        });
-    
-    
-    
-        async function loadClasses() {
-    
-            try {
-    
-                const res = await fetch('/api/classes');
-    
-                const classes = await res.json();
-    
-                const select = document.getElementById('classSelect');
-    
-                select.innerHTML = '';
-    
-                
-    
-                if (classes.length === 0) {
-    
-                    select.innerHTML = '<option value="">请先创建班级</option>';
-    
-                    return;
-    
-                }
-    
-    
-    
-                classes.forEach(c => {
-    
-                    select.innerHTML += `<option value="${c.id}">${c.name}</option>`;
-    
-                });
-    
-                
-    
-                // 默认选中第一个
-    
-                currentClassId = classes[0].id;
-    
-                loadData();
-    
-            } catch (e) {
-    
-                console.error(e);
-    
-            }
-    
-        }
-    
-    
-    
-            async function loadData() {
-    
-    
-    
-                currentClassId = document.getElementById('classSelect').value;
-    
-    
-    
-                if (!currentClassId) return;
-    
-    
-    
-        
-    
-    
-    
-                try {
-    
-    
-    
-                    const [sRes, gRes] = await Promise.all([
-    
-    
-    
-                        fetch(`/api/classes/${currentClassId}/students`),
-    
-    
-    
-                        fetch(`/api/groups?class_id=${currentClassId}`)
-    
-    
-    
-                    ]);
-    
-    
-    
-                    allStudents = await sRes.json();
-    
-    
-    
-                    allGroups = await gRes.json();
-    
-    
-    
-                    renderGrid();
-    
-    
-    
-                } catch (e) {
-    
-    
-    
-                    console.error("加载数据失败", e);
-    
-    
-    
-                }
-    
-    
-    
-            }
-    
-    
-    
-        
-    
-    
-    
-            // === 快速打卡 Tab 切换 ===
-    
-    
-    
-            function switchQuickTab(tab) {
-    
-    
-    
-                quickTab = tab;
-    
-    
-    
-                const sTab = document.getElementById('tab-student');
-    
-    
-    
-                const gTab = document.getElementById('tab-group');
-    
-    
-    
-                
-    
-    
-    
-                if (tab === 'student') {
-    
-    
-    
-                    sTab.classList.add('active');
-    
-    
-    
-                    sTab.style.background = 'white';
-    
-    
-    
-                    gTab.classList.remove('active');
-    
-    
-    
-                    gTab.style.background = 'transparent';
-    
-    
-    
-                } else {
-    
-    
-    
-                    gTab.classList.add('active');
-    
-    
-    
-                    gTab.style.background = 'white';
-    
-    
-    
-                    sTab.classList.remove('active');
-    
-    
-    
-                    sTab.style.background = 'transparent';
-    
-    
-    
-                }
-    
-    
-    
-                renderSelectorList();
-    
-    
-    
-            }
-    
-    
-    
-        
-    
-    
-    
-            // === 核心：渲染极简卡片 ===
-    
-    
-    
-            function renderGrid() {
-    
-    
-    
-                const grid = document.getElementById('studentGrid');
-    
-    
-    
-                const term = document.getElementById('searchInput').value.toLowerCase();
-    
-    
-    
-                
-    
-    
-    
-                grid.innerHTML = '';
-    
-    
-    
-                
-    
-    
-    
-                allStudents.forEach(s => {
-    
-    
-    
-                    // 搜索过滤
-    
-    
-    
-                    if (!s.name.toLowerCase().includes(term) && !s.student_id.toLowerCase().includes(term)) {
-    
-    
-    
-                        return;
-    
-    
-    
-                    }
-    
-    
-    
-        
-    
-    
-    
-                    const card = document.createElement('div');
-    
-    
-    
-                    card.className = 'student-card';
-    
-    
-    
-                    card.id = `card-${s.id}`;
-    
-    
-    
-                    
-    
-    
-    
-                    // 动态颜色：根据分值变色
-    
-    
-    
-                    let badgeColor = '#ebf8ff'; // 蓝
-    
-    
-    
-                    let textColor = '#2b6cb0';
-    
-    
-    
-                    if (s.points < 0) { badgeColor = '#fff5f5'; textColor = '#c53030'; } // 红
-    
-    
-    
-                    if (s.points > 50) { badgeColor = '#f0fff4'; textColor = '#2f855a'; } // 绿
-    
-    
-    
-                    
-    
-    
-    
-                    card.innerHTML = `
-    
-    
-    
-                        <div class="points-badge" id="points-${s.id}" style="background:${badgeColor}; color:${textColor}">
-    
-    
-    
-                            ${s.points}
-    
-    
-    
-                        </div>
-    
-    
-    
-                        
-    
-    
-    
-                        <div class="student-info">
-    
-    
-    
-                            <div class="student-name">${s.name}</div>
-    
-    
-    
-                            <div class="student-meta">
-    
-    
-    
-                                <span>${s.student_id}</span>
-    
-    
-    
-                                ${s.group_name ? `<span style="display:flex;align-items:center;gap:4px;"><span class="group-tag" style="background:${s.group_color}"></span>${s.group_name}</span>` : ''}
-    
-    
-    
-                            </div>
-    
-    
-    
-                        </div>
-    
-    
-    
-                        
-    
-    
-    
-                        <div class="quick-actions">
-    
-    
-    
-                            <button class="btn-quick btn-p1" onclick="quickUpdate(${s.id}, 1, '快捷调整')">
-    
-    
-    
-                                +1
-    
-    
-    
-                            </button>
-    
-    
-    
-                            <button class="btn-quick btn-p2" onclick="quickUpdate(${s.id}, 2, '快捷调整')">
-    
-    
-    
-                                +2
-    
-    
-    
-                            </button>
-    
-    
-    
-                            <button class="btn-quick btn-m1" onclick="quickUpdate(${s.id}, -1, '快捷调整')">
-    
-    
-    
-                                -1
-    
-    
-    
-                            </button>
-    
-    
-    
-                            <button class="btn-quick btn-more" onclick="openCustomModal(${s.id}, '${s.name}')">
-    
-    
-    
-                                ...
-    
-    
-    
-                            </button>
-    
-    
-    
-                        </div>
-    
-    
-    
-                    `;
-    
-    
-    
-                    grid.appendChild(card);
-    
-    
-    
-                });
-    
-    
-    
-            }
-    
-    
-    
-        
-    
-    
-    
-            function filterCards() {
-    
-    
-    
-                renderGrid();
-    
-    
-    
-            }
-    
-    
-    
-        
-    
-    
-    
-            // === 极速更新 (无弹窗) ===
-    
-    
-    
-            async function quickUpdate(studentId, amount, reason) {
-    
-    
-    
-                // 1. 乐观 UI 更新：先改界面，再发请求，让用户感觉“秒开”
-    
-    
-    
-                const pointsEl = document.getElementById(`points-${studentId}`);
-    
-    
-    
-                const currentPoints = parseInt(pointsEl.innerText);
-    
-    
-    
-                const newPoints = currentPoints + amount;
-    
-    
-    
-                
-    
-    
-    
-                pointsEl.innerText = newPoints;
-    
-    
-    
-                pointsEl.classList.remove('pop-anim');
-    
-    
-    
-                void pointsEl.offsetWidth; // 触发重绘
-    
-    
-    
-                pointsEl.classList.add('pop-anim'); // 播放动画
-    
-    
-    
-                
-    
-    
-    
-                // 颜色更新逻辑
-    
-    
-    
-                if (newPoints < 0) { pointsEl.style.color = '#c53030'; pointsEl.style.background = '#fff5f5'; }
-    
-    
-    
-                else if (newPoints > 50) { pointsEl.style.color = '#2f855a'; pointsEl.style.background = '#f0fff4'; }
-    
-    
-    
-                else { pointsEl.style.color = '#2b6cb0'; pointsEl.style.background = '#ebf8ff'; }
-    
-    
-    
-        
-    
-    
-    
-                // 2. 后台发送请求
-    
-    
-    
-                try {
-    
-    
-    
-                    const res = await fetch(`/api/students/${studentId}/points`, {
-    
-    
-    
-                        method: 'POST',
-    
-    
-    
-                        headers: {'Content-Type': 'application/json'},
-    
-    
-    
-                        body: JSON.stringify({
-    
-    
-    
-                            change_amount: amount,
-    
-    
-    
-                            reason: reason,
-    
-    
-    
-                            teacher: '极速操作'
-    
-    
-    
-                        })
-    
-    
-    
-                    });
-    
-    
-    
-                    
-    
-    
-    
-                    if (!res.ok) {
-    
-    
-    
-                        // 如果失败，回滚 UI (虽然概率很低)
-    
-    
-    
-                        pointsEl.innerText = currentPoints;
-    
-    
-    
-                        alert('操作失败，数据已回滚');
-    
-    
-    
-                    } else {
-    
-    
-    
-                        // 更新内存中的数据，防止后续渲染错误
-    
-    
-    
-                        const student = allStudents.find(s => s.id === studentId);
-    
-    
-    
-                        if(student) student.points = newPoints;
-    
-    
-    
-                    }
-    
-    
-    
-                } catch (e) {
-    
-    
-    
-                    console.error(e);
-    
-    
-    
-                    pointsEl.innerText = currentPoints; // 回滚
-    
-    
-    
-                }
-    
-    
-    
-            }
-    
-    
-    
-            
-    
-    
-    
-            // === 自定义分数模态框逻辑 (单人) ===
-    
-    
-    
-            let customTargetId = null;
-    
-    
-    
-            
-    
-    
-    
-            function openCustomModal(studentId, studentName) {
-    
-    
-    
-                customTargetId = studentId;
-    
-    
-    
-                document.getElementById('customStudentName').innerText = studentName;
-    
-    
-    
-                document.getElementById('customPoints').value = '';
-    
-    
-    
-                document.getElementById('customReason').value = '';
-    
-    
-    
-                document.getElementById('customScoreModal').style.display = 'block';
-    
-    
-    
-                document.getElementById('customPoints').focus();
-    
-    
-    
-            }
-    
-    
-    
-            
-    
-    
-    
-            async function submitCustomScore() {
-    
-    
-    
-                if (!customTargetId) return;
-    
-    
-    
-                
-    
-    
-    
-                const points = parseInt(document.getElementById('customPoints').value);
-    
-    
-    
-                const reason = document.getElementById('customReason').value.trim() || '自定义调整';
-    
-    
-    
-                
-    
-    
-    
-                if (isNaN(points) || points === 0) {
-    
-    
-    
-                    alert('请输入有效的分数（正数或负数）');
-    
-    
-    
-                    return;
-    
-    
-    
-                }
-    
-    
-    
-                
-    
-    
-    
-                closeModal('customScoreModal');
-    
-    
-    
-                // 复用 quickUpdate 的逻辑，享受乐观 UI 更新
-    
-    
-    
-                await quickUpdate(customTargetId, points, reason);
-    
-    
-    
-            }
-    
-    
-    
-        
-    
-    
-    
-            // === 批量模态框逻辑 ===
-    
-    
-    
-            function openQuickCheckInModal() {
-    
-    
-    
-                document.getElementById('quickCheckInModal').style.display = 'block';
-    
-    
-    
-                currentEvent = QUICK_EVENTS[0]; // 重置为第一个
-    
-    
-    
-                renderEventList();
-    
-    
-    
-                selectedStudentIds.clear(); // 每次打开清空选择
-    
-    
-    
-                switchQuickTab('student'); // 默认切到学生
-    
-    
-    
-                document.getElementById('quickSearchInput').value = '';
-    
-    
-    
-                
-    
-    
-    
-                // 初始化输入框数据
-    
-    
-    
-                fillInputFromEvent(currentEvent);
-    
-    
-    
-            }
-    
-    
-    
-            
-    
-    
-    
-            // 辅助函数：把事件的数据填入输入框
-    
-    
-    
-            function fillInputFromEvent(evt) {
-    
-    
-    
-                const pointsInput = document.getElementById('batchCustomPoints');
-    
-    
-    
-                const reasonInput = document.getElementById('batchCustomReason');
-    
-    
-    
-                
-    
-    
-    
-                if (evt.id === 'custom') {
-    
-    
-    
-                    pointsInput.value = ''; // 自定义留空让用户填
-    
-    
-    
-                    reasonInput.value = '';
-    
-    
-    
-                    pointsInput.placeholder = '分值';
-    
-    
-    
-                    reasonInput.placeholder = '请输入理由...';
-    
-    
-    
-                    pointsInput.focus();
-    
-    
-    
-                } else {
-    
-    
-    
-                    pointsInput.value = evt.points;
-    
-    
-    
-                    reasonInput.value = evt.name;
-    
-    
-    
-                }
-    
-    
-    
-            }
-    
-    
-    
-        
-    
-    
-    
-            function renderEventList() {
-    
-    
-    
-                const container = document.getElementById('quickActionsList');
-    
-    
-    
-                container.innerHTML = '';
-    
-    
-    
-                
-    
-    
-    
-                QUICK_EVENTS.forEach(evt => {
-    
-    
-    
-                    const div = document.createElement('div');
-    
-    
-    
-                    const isSelected = currentEvent.id === evt.id;
-    
-    
-    
-                    div.style.cssText = `
-    
-    
-    
-                        padding: 10px; border: 1px solid ${isSelected ? '#ed8936' : '#e2e8f0'};
-    
-    
-    
-                        border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 10px;
-    
-    
-    
-                        background: ${isSelected ? '#fffaf0' : 'white'};
-    
-    
-    
-                    `;
-    
-    
-    
-                    div.onclick = () => { 
-    
-    
-    
-                        currentEvent = evt; 
-    
-    
-    
-                        renderEventList(); 
-    
-    
-    
-                        // 关键修改：点击左侧，自动填充右侧输入框
-    
-    
-    
-                        fillInputFromEvent(evt);
-    
-    
-    
-                    };
-    
-    
-    
-                    
-    
-    
-    
-                    let pointText = '';
-    
-    
-    
-                    let color = '#718096';
-    
-    
-    
-                    if (evt.id === 'custom') {
-    
-    
-    
-                        pointText = '手动输入';
-    
-    
-    
-                    } else {
-    
-    
-    
-                        color = evt.points > 0 ? '#48bb78' : '#f56565';
-    
-    
-    
-                        pointText = (evt.points > 0 ? '+' : '') + evt.points;
-    
-    
-    
-                    }
-    
-    
-    
-        
-    
-    
-    
-                    div.innerHTML = `
-    
-    
-    
-                        <span style="font-size: 20px;">${evt.icon}</span>
-    
-    
-    
-                        <div style="flex: 1;">
-    
-    
-    
-                            <div style="font-weight: bold; color: #2d3748;">${evt.name}</div>
-    
-    
-    
-                            <div style="font-size: 12px; color: ${color}; font-weight: bold;">
-    
-    
-    
-                                ${pointText}
-    
-    
-    
-                            </div>
-    
-    
-    
-                        </div>
-    
-    
-    
-                        ${isSelected ? '<i class="fas fa-check-circle" style="color: #ed8936;"></i>' : ''}
-    
-    
-    
-                    `;
-    
-    
-    
-                    container.appendChild(div);
-    
-    
-    
-                });
-    
-    
-    
-            }
-    
-    
-    
-        
-    
-    
-    
-            function renderSelectorList() {
-    
-    
-    
-                const container = document.getElementById('studentSelectorList');
-    
-    
-    
-                const term = document.getElementById('quickSearchInput').value.toLowerCase();
-    
-    
-    
-                container.innerHTML = '';
-    
-    
-    
-                
-    
-    
-    
-                if (quickTab === 'student') {
-    
-    
-    
-                    allStudents.forEach(s => {
-    
-    
-    
-                        if (!s.name.toLowerCase().includes(term) && !s.student_id.toLowerCase().includes(term)) return;
-    
-    
-    
-                        
-    
-    
-    
-                        const div = document.createElement('div');
-    
-    
-    
-                        div.className = 'select-item';
-    
-    
-    
-                        const isSelected = selectedStudentIds.has(s.id);
-    
-    
-    
-                        div.innerHTML = `
-    
-    
-    
-                            <input type="checkbox" ${isSelected ? 'checked' : ''} style="margin-right: 10px; pointer-events: none;">
-    
-    
-    
-                            <div>${s.name} <small style="color:#a0aec0">(${s.student_id})</small></div>
-    
-    
-    
-                        `;
-    
-    
-    
-                        div.onclick = () => {
-    
-    
-    
-                            if (selectedStudentIds.has(s.id)) selectedStudentIds.delete(s.id);
-    
-    
-    
-                            else selectedStudentIds.add(s.id);
-    
-    
-    
-                            renderSelectorList(); 
-    
-    
-    
-                            document.getElementById('selectedCount').innerText = selectedStudentIds.size;
-    
-    
-    
-                        };
-    
-    
-    
-                        container.appendChild(div);
-    
-    
-    
-                    });
-    
-    
-    
-                } else {
-    
-    
-    
-                    // 按小组渲染
-    
-    
-    
-                    allGroups.forEach(g => {
-    
-    
-    
-                        if (!g.name.toLowerCase().includes(term)) return;
-    
-    
-    
-                        
-    
-    
-    
-                        const groupStudents = allStudents.filter(s => s.group_id === g.id);
-    
-    
-    
-                        const isAllSelected = groupStudents.length > 0 && groupStudents.every(s => selectedStudentIds.has(s.id));
-    
-    
-    
-                        const isSomeSelected = !isAllSelected && groupStudents.some(s => selectedStudentIds.has(s.id));
-    
-    
-    
-        
-    
-    
-    
-                        const div = document.createElement('div');
-    
-    
-    
-                        div.className = 'select-item';
-    
-    
-    
-                        div.style.borderLeft = `4px solid ${g.color}`;
-    
-    
-    
-                        div.innerHTML = `
-    
-    
-    
-                            <input type="checkbox" ${isAllSelected ? 'checked' : ''} ${isSomeSelected ? 'style="opacity:0.6"' : ''} style="margin-right: 10px; pointer-events: none;">
-    
-    
-    
-                            <div style="flex:1"><strong>${g.name}</strong> <small style="color:#a0aec0">(${groupStudents.length}人)</small></div>
-    
-    
-    
-                        `;
-    
-    
-    
-                        div.onclick = () => {
-    
-    
-    
-                            if (isAllSelected) {
-    
-    
-    
-                                groupStudents.forEach(s => selectedStudentIds.delete(s.id));
-    
-    
-    
-                            } else {
-    
-    
-    
-                                groupStudents.forEach(s => selectedStudentIds.add(s.id));
-    
-    
-    
-                            }
-    
-    
-    
-                            renderSelectorList();
-    
-    
-    
-                            document.getElementById('selectedCount').innerText = selectedStudentIds.size;
-    
-    
-    
-                        };
-    
-    
-    
-                        container.appendChild(div);
-    
-    
-    
-                    });
-    
-    
-    
-                }
-    
-    
-    
-            }
-    
-    
-    
-        
-    
-    
-    
-            function toggleSelectAll() {
-    
-    
-    
-                const term = document.getElementById('quickSearchInput').value.toLowerCase();
-    
-    
-    
-                let currentPool = [];
-    
-    
-    
-                
-    
-    
-    
-                if (quickTab === 'student') {
-    
-    
-    
-                    currentPool = allStudents.filter(s => s.name.toLowerCase().includes(term) || s.student_id.toLowerCase().includes(term));
-    
-    
-    
-                } else {
-    
-    
-    
-                    const visibleGroups = allGroups.filter(g => g.name.toLowerCase().includes(term));
-    
-    
-    
-                    visibleGroups.forEach(g => {
-    
-    
-    
-                        currentPool.push(...allStudents.filter(s => s.group_id === g.id));
-    
-    
-    
-                    });
-    
-    
-    
-                }
-    
-    
-    
-        
-    
-    
-    
-                const allSelected = currentPool.every(s => selectedStudentIds.has(s.id));
-    
-    
-    
-                if (allSelected) {
-    
-    
-    
-                    currentPool.forEach(s => selectedStudentIds.delete(s.id));
-    
-    
-    
-                } else {
-    
-    
-    
-                    currentPool.forEach(s => selectedStudentIds.add(s.id));
-    
-    
-    
-                }
-    
-    
-    
-                
-    
-    
-    
-                renderSelectorList();
-    
-    
-    
-                document.getElementById('selectedCount').innerText = selectedStudentIds.size;
-    
-    
-    
-            }
+document.addEventListener('DOMContentLoaded', loadAllData);
 
-    function closeModal(id) {
-        document.getElementById(id).style.display = 'none';
+async function loadAllData() {
+    try {
+        const [sRes, gRes, stdRes] = await Promise.all([fetch('/api/students'), fetch('/api/groups'), fetch('/api/point_standards')]);
+        students = await sRes.json(); groups = await gRes.json(); rawStandards = await stdRes.json();
+        renderNav(); renderGrid(); initStandardSelectors();
+    } catch(e) { console.error(e); }
+}
+
+function renderNav() {
+    const container = document.getElementById('groupNav');
+    let html = `<div class="nav-item ${currentGroupId===null?'active':''}" onclick="setGroup(null)"><div style="display:flex;align-items:center;gap:10px;"><div class="nav-dot"></div><b>全班同学</b></div><span>${students.length}</span></div>`;
+    html += groups.map(g => `<div class="nav-item ${currentGroupId===g.id?'active':''}" onclick="setGroup(${g.id})"><div style="display:flex;align-items:center;gap:10px;"><div class="nav-dot" style="background:${g.color}"></div><b>${g.name}</b></div><span>${g.student_count}</span></div>`).join('');
+    container.innerHTML = html;
+}
+
+function renderGrid() {
+    const container = document.getElementById('studentGrid');
+    const kw = document.getElementById('stuSearch').value.toLowerCase();
+    let data = students;
+    if(currentGroupId !== null) data = data.filter(s => s.group_id === currentGroupId);
+    if(kw) data = data.filter(s => s.name.toLowerCase().includes(kw) || s.student_id.includes(kw));
+    document.getElementById('displayCount').innerText = data.length;
+    container.innerHTML = data.map(s => `
+        <div class="student-card">
+            <div class="points-badge" id="pts-${s.id}">${s.points}</div>
+            <div class="stu-name">${s.name}</div>
+            <div class="stu-id">${s.student_id}</div>
+            <div class="quick-btns">
+                <button class="q-btn q-p1" onclick="updatePoints(${s.id}, 1, '[快捷] 快速评分')">+1</button>
+                <button class="q-btn q-p2" onclick="updatePoints(${s.id}, 2, '[快捷] 快速评分')">+2</button>
+                <button class="q-btn q-m1" onclick="updatePoints(${s.id}, -1, '[快捷] 快速评分')">-1</button>
+                <button class="q-btn q-more" onclick="openStandardModal(${s.id}, '${s.name}')">自定义变更...</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function setGroup(id) { currentGroupId = id; renderNav(); renderGrid(); }
+
+async function updatePoints(id, amount, reason) {
+    const el = document.getElementById(`pts-${id}`);
+    const newVal = parseInt(el.innerText) + amount;
+    el.innerText = newVal;
+    el.style.transform = 'scale(1.2)'; setTimeout(() => el.style.transform = 'scale(1)', 200);
+    await fetch(`/api/students/${id}/points`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({change_amount:amount, reason:reason}) });
+    const s = students.find(x => x.id === id); if(s) s.points = newVal;
+}
+
+// --- 联动引擎 ---
+function initStandardSelectors() {
+    const areas = [...new Set(rawStandards.map(s => s.area))];
+    const html = areas.map(a => `<option value="${a}">${a}</option>`).join('');
+    document.getElementById('areaSelect').innerHTML = html;
+    document.getElementById('bArea').innerHTML = html;
+    updateCats('areaSelect','catSelect','itemSelect','finalPts');
+    updateCats('bArea','bCat','bItem','bPts');
+}
+
+function updateCats(aId, cId, iId, pId) {
+    const area = document.getElementById(aId).value;
+    const cats = [...new Set(rawStandards.filter(s => s.area === area).map(s => s.category))];
+    document.getElementById(cId).innerHTML = cats.map(c => `<option value="${c}">${c}</option>`).join('');
+    updateItems(aId, cId, iId, pId);
+}
+
+function updateItems(aId, cId, iId, pId) {
+    const area = document.getElementById(aId).value;
+    const cat = document.getElementById(cId).value;
+    const items = rawStandards.filter(s => s.area === area && s.category === cat);
+    document.getElementById(iId).innerHTML = items.map(i => `<option value="${i.name}" data-pts="${i.default_points}">${i.name}</option>`).join('');
+    const dispId = aId === 'areaSelect' ? 'finalPtsDisplay' : 'bPtsDisp';
+    applyStandardPts(iId, pId, dispId);
+}
+
+function applyStandardPts(iId, pId, dId) {
+    const opt = document.getElementById(iId).selectedOptions[0];
+    if(opt) {
+        const pts = opt.dataset.pts;
+        document.getElementById(pId).value = pts;
+        const disp = document.getElementById(dId);
+        disp.innerText = (pts >= 0 ? '+' : '') + pts;
+        disp.style.color = pts >= 0 ? '#10b981' : '#ef4444';
     }
+}
 
-    async function submitBatch() {
-        const ids = Array.from(selectedStudentIds);
-        if (ids.length === 0) return alert('请选择学生');
+// --- 弹窗与提交 ---
+function openStandardModal(id, name) {
+    document.getElementById('targetId').value = id;
+    document.getElementById('targetStuName').innerText = `正在为 ${name} 录入变更`;
+    document.getElementById('standardPointsModal').style.display = 'block';
+}
 
-        // 关键修改：统一从输入框获取数据，不再依赖 currentEvent 的预设值
-        const points = parseInt(document.getElementById('batchCustomPoints').value);
-        let reason = document.getElementById('batchCustomReason').value.trim();
+async function doStandardSubmit() {
+    const id = document.getElementById('targetId').value;
+    const reason = `[${document.getElementById('areaSelect').value}/${document.getElementById('catSelect').value}] ${document.getElementById('itemSelect').value}`;
+    const pts = parseInt(document.getElementById('finalPts').value);
+    const note = document.getElementById('finalNote').value.trim();
+    await updatePoints(id, pts, note ? `${reason} | ${note}` : reason);
+    closeModal('standardPointsModal');
+}
 
-        if (isNaN(points) || points === 0) {
-            return alert('请输入有效的分数');
-        }
-        if (!reason) {
-            reason = '批量打卡'; // 默认理由
-        }
+function openBatchModal() { 
+    bSelectedIds.clear(); document.getElementById('batchModal').style.display='block'; 
+    switchBTab('student'); 
+}
 
-        try {
-            const res = await fetch('/api/students/batch/points', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    student_ids: ids,
-                    change_amount: points,
-                    reason: reason,
-                    teacher: '批量打卡'
-                })
-            });
-            
-            if (res.ok) {
-                alert('批量处理完成！');
-                closeModal('quickCheckInModal');
-                loadData(); // 刷新主网格
-            } else {
-                alert('处理失败');
-            }
-        } catch (e) {
-            console.error(e);
-            alert('网络错误');
-        }
-    }
+function switchBTab(t) { 
+    bTab = t; bSelectedIds.clear(); 
+    document.getElementById('btStu').classList.toggle('active', t==='student');
+    document.getElementById('btGrp').classList.toggle('active', t==='group');
+    renderBList(); updateBCount();
+}
+
+function renderBList() {
+    const container = document.getElementById('bList');
+    const data = (bTab === 'student') ? students : groups;
+    container.innerHTML = data.map(item => `<div class="list-item ${bSelectedIds.has(item.id)?'selected':''}" onclick="toggleBSelect(${item.id})">${item.name}</div>`).join('');
+}
+
+function toggleBSelect(id) { if(bSelectedIds.has(id)) bSelectedIds.delete(id); else bSelectedIds.add(id); renderBList(); updateBCount(); }
+function updateBCount() { document.getElementById('bCount').innerText = bSelectedIds.size; }
+
+async function doBatchSubmit() {
+    if(bSelectedIds.size === 0) return alert('请选择对象');
+    const ids = bTab === 'group' ? students.filter(s => bSelectedIds.has(s.group_id)).map(s => s.id) : Array.from(bSelectedIds);
+    const reason = `[批量] [${document.getElementById('bArea').value}/${document.getElementById('bCat').value}] ${document.getElementById('bItem').value}`;
+    const pts = parseInt(document.getElementById('bPts').value);
+    const note = document.getElementById('bNote').value.trim();
     
-    
+    await fetch('/api/students/batch/points', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({student_ids:ids, change_amount:pts, reason: note ? `${reason} | ${note}` : reason}) });
+    alert('批量变更成功！'); closeModal('batchModal'); loadAllData();
+}
 
-    // 关闭模态框点击外部
-    window.onclick = function(event) {
-        if (event.target.classList.contains('modal')) {
-            event.target.style.display = "none";
-        }
-    }
-
-    // === 审核系统逻辑 ===
-    setInterval(checkPendingAudits, 10000); // 每10秒检查一次
-    checkPendingAudits(); // 初始化检查
-
-    async function checkPendingAudits() {
-        try {
-            const res = await fetch('/api/audit/pending');
-            const list = await res.json();
-            const badge = document.getElementById('auditBadge');
-            if (list.length > 0) {
-                badge.style.display = 'flex';
-                badge.textContent = list.length;
-            } else {
-                badge.style.display = 'none';
-            }
-            return list;
-        } catch(e) { console.error(e); return []; }
-    }
-
-    async function openAuditModal() {
-        const list = await checkPendingAudits();
-        const container = document.getElementById('auditList');
-        const footer = document.getElementById('auditFooter');
-        const selectAll = document.getElementById('auditSelectAll');
-        
-        container.innerHTML = '';
-        selectAll.checked = false;
-        footer.style.display = 'none';
-        
-        if (list.length === 0) {
-            container.innerHTML = '<div style="padding:60px; text-align:center; color:#cbd5e0;"><i class="fas fa-check-circle" style="font-size:40px; margin-bottom:15px; display:block; opacity:0.5;"></i>太棒了，所有申请都处理完啦！</div>';
-        } else {
-            footer.style.display = 'flex';
-            list.forEach(item => {
-                const div = document.createElement('div');
-                div.style.cssText = 'padding: 18px 25px; border-bottom: 1px solid #f1f5f9; display: flex; align-items: center; gap: 15px; transition: background 0.2s;';
-                div.onmouseover = () => div.style.background = '#fcfcfc';
-                div.onmouseout = () => div.style.background = 'transparent';
-                
-                const pointsColor = item.change_amount > 0 ? '#10b981' : '#ef4444';
-                const sign = item.change_amount > 0 ? '+' : '';
-                
-                div.innerHTML = `
-                    <input type="checkbox" class="audit-item-check" data-id="${item.id}" onchange="updateAuditSelection()" style="width: 18px; height: 18px; cursor: pointer; accent-color: #6366f1;">
-                    <div style="flex: 1;">
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <span style="font-weight: 700; color: #1e293b; font-size: 16px;">${item.student_name}</span>
-                            <span style="background: ${pointsColor}15; color: ${pointsColor}; padding: 2px 10px; border-radius: 20px; font-weight: 800; font-size: 14px;">${sign}${item.change_amount}</span>
-                        </div>
-                        <div style="font-size: 13px; color: #64748b; margin-top: 6px;">
-                            <i class="fas fa-tag" style="margin-right: 4px; font-size: 11px;"></i>${item.reason} 
-                            <span style="margin-left: 10px; color: #94a3b8;"><i class="fas fa-user-edit" style="margin-right: 4px; font-size: 11px;"></i>${item.teacher}</span>
-                        </div>
-                    </div>
-                    <div style="display: flex; gap: 10px;">
-                        <button onclick="processAudit(${item.id}, 'approve')" 
-                                style="background: #ecfdf5; color: #10b981; border: none; padding: 6px 15px; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; transition: all 0.2s;">
-                            同意
-                        </button>
-                        <button onclick="processAudit(${item.id}, 'reject')" 
-                                style="background: #fff1f2; color: #ef4444; border: none; padding: 6px 15px; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; transition: all 0.2s;">
-                            拒绝
-                        </button>
-                    </div>
-                `;
-                container.appendChild(div);
-            });
-        }
-        
-        updateAuditSelection();
-        document.getElementById('auditModal').style.display = 'block';
-    }
-
-    function toggleAllAudits(checked) {
-        document.querySelectorAll('.audit-item-check').forEach(cb => cb.checked = checked);
-        updateAuditSelection();
-    }
-
-    function updateAuditSelection() {
-        const checked = document.querySelectorAll('.audit-item-check:checked');
-        const total = document.querySelectorAll('.audit-item-check').length;
-        document.getElementById('auditSelectedHint').textContent = `已选择 ${checked.length} 项 / 共 ${total} 项`;
-        document.getElementById('auditSelectAll').checked = (checked.length === total && total > 0);
-    }
-
-    async function batchProcessAudits(action) {
-        const checked = document.querySelectorAll('.audit-item-check:checked');
-        const ids = Array.from(checked).map(cb => parseInt(cb.dataset.id));
-        
-        if (ids.length === 0) return alert('请先勾选需要处理的申请');
-        
-        const confirmText = action === 'approve' ? `确定一键通过这 ${ids.length} 项申请吗？` : `确定拒绝这 ${ids.length} 项申请吗？`;
-        if (!confirm(confirmText)) return;
-
-        try {
-            const res = await fetch('/api/audit/process', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    audit_ids: ids,
-                    action: action
-                })
-            });
-            
-            if (res.ok) {
-                // 不弹窗直接刷新，体验更好
-                await openAuditModal(); 
-                loadData(); 
-            } else {
-                alert('批量处理失败');
-            }
-        } catch(e) { console.error(e); }
-    }
-
-    async function processAudit(id, action) {
-        // 单个处理逻辑也复用 API
-        try {
-            const res = await fetch('/api/audit/process', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    audit_ids: [id],
-                    action: action
-                })
-            });
-            
-            if(res.ok) {
-                openAuditModal(); 
-                loadData(); 
-            }
-        } catch (e) { console.error(e); }
-    }
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 </script>
 {% endblock %}

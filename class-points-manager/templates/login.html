@@ -49,8 +49,8 @@
     <div class="login-card">
         <div class="logo-area">
             <i class="fas fa-user-shield"></i>
-            <h1>班级积分管理系统</h1>
-            <p style="color: #718096; font-size: 0.9rem;">请输入管理密码进入系统</p>
+            <h1 id="systemTitle">班级积分管理系统</h1>
+            <p id="systemSubTitle" style="color: #718096; font-size: 0.9rem;">请输入管理密码进入系统</p>
         </div>
         <div class="input-group">
             <i class="fas fa-lock"></i>
@@ -91,9 +91,14 @@
         </div>
 
         <!-- 自助通道入口 -->
-        <a href="/student_portal" style="display: block; margin-top: 20px; color: #667eea; text-decoration: none; font-weight: 600; font-size: 0.95rem;">
-            <i class="fas fa-rocket"></i> 我是学生，进入自助通道 &rarr;
-        </a>
+        <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 20px;">
+            <a href="/student_portal" style="color: #667eea; text-decoration: none; font-weight: 600; font-size: 0.95rem;">
+                <i class="fas fa-rocket"></i> 我是学生，进入自助通道 &rarr;
+            </a>
+            <a href="/grocery_shop" style="color: #10b981; text-decoration: none; font-weight: 600; font-size: 0.95rem;">
+                <i class="fas fa-shopping-bag"></i> 兑换小铺 (免密进入) &rarr;
+            </a>
+        </div>
 
         <div id="errorHint" class="error-hint">密码错误，请重试</div>
     </div>
@@ -176,9 +181,23 @@
 
         // 初始化检查状态
         async function checkStatus() {
+            // 1. 获取内网穿透状态
             const res = await fetch('/api/tunnel/status');
             const data = await res.json();
             if (data.active) showOnlineUI(data.url);
+
+            // 2. 获取班级信息 (单班级模式新增)
+            try {
+                const sysRes = await fetch('/api/system/info');
+                const sysData = await sysRes.json();
+                if (sysData) {
+                    document.getElementById('systemTitle').innerText = sysData.class_name + ' 积分管理';
+                    document.getElementById('systemSubTitle').innerText = '欢迎回来，' + (sysData.teacher_name || '班主任') + '老师';
+                } else {
+                    document.getElementById('systemTitle').innerText = '系统待初始化';
+                    document.getElementById('systemSubTitle').innerText = '请登录以完成首屏配置';
+                }
+            } catch(e) { console.error(e); }
         }
         checkStatus();
 
@@ -213,5 +232,38 @@
             if(e.key === 'Enter') handleLogin();
         });
     </script>
+    <!-- 隐形彩蛋 -->
+    <style>
+        .final-egg-zone {
+            position: fixed;
+            bottom: 0;
+            right: 0;
+            width: 100px;
+            height: 100px;
+            z-index: 2147483647; /* 确保在最上层 */
+            display: flex;
+            align-items: flex-end;
+            justify-content: flex-end;
+            padding: 10px;
+        }
+        .final-egg-link {
+            color: #ff4d4f !important;
+            font-weight: 900;
+            font-size: 14px;
+            text-decoration: none;
+            font-family: monospace;
+            opacity: 0;
+            transition: opacity 0.3s;
+            cursor: pointer;
+            pointer-events: none; /* 平时不阻挡点击 */
+        }
+        .final-egg-zone:hover .final-egg-link {
+            opacity: 1;
+            pointer-events: auto; /* 只有显示时才允许点击 */
+        }
+    </style>
+    <div class="final-egg-zone">
+        <a href="/author" class="final-egg-link">eggs</a>
+    </div>
 </body>
 </html>

@@ -1,503 +1,405 @@
 {% extends "base.html" %}
 
-{% block title %}首页{% endblock %}
+{% block title %}管理中心{% endblock %}
 
 {% block content %}
 <style>
     /* 移动端响应式样式 */
     @media (max-width: 768px) {
-        .dashboard-header {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 15px;
-        }
-
-        .dashboard-header .btn {
-            width: 100%;
-            justify-content: center;
-        }
-
-        .class-selector {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            align-items: stretch;
-        }
-
-        .class-selector select {
-            width: 100%;
-        }
-
-        .stats-grid {
-            grid-template-columns: repeat(2, 1fr); /* 平板/大手机显示两列 */
-        }
-
-        .action-buttons {
-            grid-template-columns: repeat(2, 1fr);
-        }
-    }
-
-    @media (max-width: 576px) {
-        .stats-grid {
-            grid-template-columns: 1fr; /* 小屏手机一列 */
-        }
-
-        .action-buttons {
-            grid-template-columns: 1fr; /* 按钮一列 */
-        }
-
-        .info-card h3, .recent-activity h3, .quick-actions h3 {
-            font-size: 1.15rem;
-            margin-bottom: 15px;
-        }
-        
-        .stat-card { padding: 20px; }
-        .recent-activity { padding: 15px; border-radius: 15px; }
-        .activity-list { min-height: 240px; max-height: 240px; }
-        .activity-item { padding: 12px 15px; }
-        .activity-points { font-size: 18px; }
-        .dashboard-header h1 { font-size: 1.5rem; }
+        .dashboard-header { flex-direction: column; align-items: flex-start; gap: 15px; }
+        .dashboard-header .btn { width: 100%; justify-content: center; }
+        .stats-grid { grid-template-columns: repeat(2, 1fr); }
+        .action-buttons { grid-template-columns: repeat(2, 1fr); }
     }
 
     /* === 最近活动列表优化 === */
     .recent-activity {
-        background: white;
-        border-radius: 20px;
-        padding: 25px;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.05);
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
+        background: white; border-radius: 20px; padding: 25px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.05); display: flex; flex-direction: column; overflow: hidden;
     }
-
-    .recent-activity h3 {
-        font-size: 1.4rem;
-        font-weight: 800;
-        margin-bottom: 20px;
-        color: #1a202c;
-    }
-
-    .activity-list {
-        flex: 1;
-        overflow: hidden;
-        position: relative;
-        min-height: 280px; /* 稍微增加高度 */
-        max-height: 280px;
-    }
-
-    .activity-track {
-        display: flex;
-        flex-direction: column;
-        gap: 15px; /* 增加间距 */
-    }
-
-    /* 滚动动画 class */
-    .scrolling {
-        animation: scrollUp 25s linear infinite; /* 稍微调慢一点，更稳重 */
-    }
-    
-    .activity-list:hover .scrolling {
-        animation-play-state: paused;
-    }
-
-    @keyframes scrollUp {
-        0% { transform: translateY(0); }
-        100% { transform: translateY(-50%); }
-    }
+    .activity-list { flex: 1; overflow-y: auto; min-height: 350px; max-height: 350px; padding-right: 10px; }
+    .activity-list::-webkit-scrollbar { width: 6px; }
+    .activity-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
 
     .activity-item {
-        display: flex;
-        align-items: center;
-        padding: 16px 20px; /* 增加内边距 */
-        border-radius: 16px;
-        background: #f8fafc;
-        border: 1px solid #f1f5f9;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        display: flex; align-items: center; padding: 12px 20px; border-radius: 16px;
+        background: #f8fafc; border: 1px solid #f1f5f9; transition: 0.3s; gap: 15px; margin-bottom: 10px;
     }
-    
-    .activity-item:hover {
-        background: white;
-        box-shadow: 0 8px 15px rgba(0,0,0,0.08);
-        transform: scale(1.02) translateX(5px);
-        border-color: #e2e8f0;
-    }
+    .activity-icon { width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; font-size: 16px; flex-shrink: 0; }
+    .activity-content-flat { flex: 1; display: flex; align-items: center; gap: 20px; overflow: hidden; }
+    .activity-name-flat { font-size: 18px; font-weight: 800; color: #1e293b; white-space: nowrap; min-width: 80px; }
+    .activity-reason-flat { flex: 1; font-size: 15px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .activity-points { font-size: 20px; font-weight: 900; min-width: 60px; text-align: right; }
 
-    .activity-icon {
-        width: 44px; /* 增大图标圆圈 */
-        height: 44px;
-        border-radius: 14px; /* 变成圆角矩形，更现代 */
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
-        font-size: 18px; /* 增大图标 */
-        margin-right: 16px;
-        flex-shrink: 0;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-    }
-
-    .activity-details {
-        flex: 1;
-        overflow: hidden;
-    }
-
-    .activity-details h4 {
-        margin: 0 0 6px 0;
-        font-size: 18px; /* 调大学生姓名 */
-        color: #2d3748;
-        font-weight: 700;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    
-    .activity-time {
-        font-size: 13px; /* 调大时间 */
-        color: #a0aec0;
-        font-weight: 500;
-        background: #edf2f7;
-        padding: 2px 8px;
-        border-radius: 6px;
-    }
-
-    .activity-details p {
-        margin: 0;
-        font-size: 15px; /* 调大理由 */
-        color: #4a5568;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .activity-points {
-        font-size: 22px; /* 显著调大积分分值 */
-        font-weight: 900;
-        margin-left: 15px;
-        min-width: 50px;
-        text-align: right;
-        font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-    }
+    /* 业务配置中心专用样式 */
+    .std-area-tab { padding: 12px 15px; border-radius: 10px; cursor: pointer; font-weight: 700; color: #64748b; transition: 0.2s; border: 1px solid transparent; }
+    .std-area-tab:hover { background: #f1f5f9; color: #6366f1; }
+    .std-area-tab.active { background: white; color: #6366f1; border-color: #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    .input-modern { width: 100%; height: 42px; padding: 0 15px 0 35px; border: 2px solid #edf2f7; border-radius: 12px; font-size: 14px; outline: none; transition: 0.3s; box-sizing: border-box; }
+    .btn-premium { height: 42px; background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: white; border: none; border-radius: 12px; font-weight: 800; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2); }
 </style>
+
 <div class="dashboard">
     <div class="dashboard-header">
-        <h1><i class="fas fa-tachometer-alt"></i> 控制面板</h1>
+        <h1 id="classDisplayName"><i class="fas fa-school"></i> 正在加载班级...</h1>
         <div style="display: flex; gap: 10px;">
-            <button class="btn btn-danger" onclick="startDeleteProcess()" style="background: #ef4444; color: white;">
-                <i class="fas fa-trash-alt"></i> 卸载旧班级
+            <button class="btn" onclick="openStandardModal()" style="background: #6366f1; color: white; font-weight: 700;"><i class="fas fa-cogs"></i> 业务配置</button>
+            <button class="btn" onclick="openAuditModal()" style="background: #ef4444; color: white; position: relative; font-weight: 700;">
+                <i class="fas fa-clipboard-check"></i> 审批中心
+                <span id="auditBadge" style="display:none; position:absolute; top:-8px; right:-8px; background:white; color:#ef4444; font-size:10px; padding:2px 6px; border-radius:10px; font-weight:900; border:2px solid #ef4444;">0</span>
             </button>
-            <button class="btn btn-primary" onclick="showClassModal()">
-                <i class="fas fa-plus"></i> 创建新班级
-            </button>
+            <button class="btn btn-danger" onclick="startSystemReset()" style="background: #64748b; color: white;"><i class="fas fa-fire-alt"></i> 卸载班级</button>
+            <button class="btn btn-primary" id="btnCreateClass" style="display:none;" onclick="showClassModal()"><i class="fas fa-plus"></i> 安装新班级</button>
         </div>
     </div>
 
-    <!-- 卸载班级密码验证模态框 -->
-    <div id="deleteAuthModal" class="modal" style="z-index: 1100;">
-        <div class="modal-content" style="max-width: 350px; border-radius: 16px;">
-            <div class="modal-header" style="background: #ef4444; color: white;">
-                <h2 style="color: white; margin: 0;"><i class="fas fa-shield-alt"></i> 权限验证</h2>
-                <span class="close" onclick="closeModal('deleteAuthModal')" style="color: white;">&times;</span>
-            </div>
-            <div class="modal-body" style="padding: 25px;">
-                <p style="margin-bottom: 15px; font-weight: 600; color: #4b5563;">请输入管理密码以执行删除操作：</p>
-                <input type="password" id="deletePasswordInput" class="form-control" style="font-size: 20px; text-align: center; letter-spacing: 4px; border: 2px solid #ef4444;" placeholder="••••••">
-                <div id="deletePwdError" style="color: #ef4444; font-size: 13px; margin-top: 8px; display: none;">密码错误，拒绝访问</div>
-                <button class="btn btn-danger" onclick="verifyDeletePassword()" style="width: 100%; margin-top: 20px; background: #ef4444;">确认身份</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- 卸载班级选择模态框 -->
-    <div id="classDeleteModal" class="modal" style="z-index: 1101;">
-        <!-- ... 原有的内容 ... -->
-        <div class="modal-content" style="max-width: 450px; border-radius: 16px;">
-            <div class="modal-header" style="background: #ef4444; color: white;">
-                <h2 style="color: white; margin: 0;"><i class="fas fa-exclamation-triangle"></i> 彻底卸载班级</h2>
-                <span class="close" onclick="closeModal('classDeleteModal')" style="color: white;">&times;</span>
-            </div>
-            <div class="modal-body" style="padding: 25px;">
-                <div style="background: #fef2f2; padding: 15px; border-radius: 12px; border: 1px solid #fee2e2; margin-bottom: 20px;">
-                    <p style="color: #b91c1c; margin: 0; font-size: 14px; line-height: 1.5;">
-                        <strong>警告：</strong> 此操作将永久删除该班级的所有<strong>学生、积分历史、小组记录及老师评语</strong>。数据一旦删除无法恢复！
-                    </p>
-                </div>
-                <div class="form-group">
-                    <label style="font-weight: 600;">请选择要卸载的班级：</label>
-                    <select id="deleteClassSelect" class="form-control" style="margin-top: 10px; height: 45px; border: 2px solid #e5e7eb;">
-                        <option value="">请选择班级...</option>
-                    </select>
-                </div>
-                <button class="btn btn-danger" onclick="executeDeleteClass()" style="width: 100%; margin-top: 20px; padding: 12px; font-weight: bold; background: #ef4444;">
-                    <i class="fas fa-fire"></i> 立即彻底清除
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- 告别纪念弹窗 -->
-    <div id="farewellModal" class="modal" style="z-index: 2000; background: rgba(255,255,255,0.9);">
-        <div class="modal-content" style="max-width: 600px; border: none; background: transparent; box-shadow: none; margin-top: 15vh;">
-            <div style="background: white; border-radius: 30px; padding: 60px 40px; text-align: center; box-shadow: 0 30px 60px rgba(0,0,0,0.1); border: 1px solid #eef2ff; position: relative; overflow: hidden;">
-                <!-- 装饰性元素 -->
-                <div style="position: absolute; top: -50px; left: -50px; width: 150px; height: 150px; background: #eef2ff; border-radius: 50%; opacity: 0.5;"></div>
-                <div style="position: absolute; bottom: -30px; right: -30px; width: 100px; height: 100px; background: #fff7ed; border-radius: 50%; opacity: 0.5;"></div>
-                
-                <div style="font-size: 4rem; color: #6366f1; margin-bottom: 30px; animation: heartBeat 2s infinite;">
-                    <i class="fas fa-heart"></i>
-                </div>
-                
-                <h2 style="font-size: 1.8rem; color: #1e293b; margin-bottom: 25px; line-height: 1.6; font-weight: 800;">
-                    同学们前程似锦，未来一帆风顺。<br>永远铭记我们的 <span id="farewellClassName" style="color: #6366f1; border-bottom: 3px solid #c7d2fe;"></span>
-                </h2>
-
-                <div style="background: #fff5f5; padding: 20px; border-radius: 16px; color: #e53e3e; font-weight: 600; margin-bottom: 30px; border: 1px dashed #feb2b2; line-height: 1.8; position: relative;">
-                    <i class="fas fa-hands-clapping" style="font-size: 1.5rem; margin-bottom: 10px; display: block;"></i>
-                    感谢班主任与各科老师一年的辛勤付出，<br>
-                    大家一起给他们鼓个掌吧！👏
-                </div>
-                
-                <p style="color: #64748b; font-size: 1.1rem; margin-bottom: 40px;">毕业不是终点，而是新征程的起点。</p>
-                
-                <button class="btn btn-primary" onclick="location.reload()" style="padding: 15px 50px; border-radius: 50px; font-size: 1.1rem; font-weight: 700; background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); border: none; box-shadow: 0 10px 20px rgba(79, 70, 229, 0.3);">
-                    珍藏回忆，继续出发
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <style>
-        @keyframes heartBeat {
-            0% { transform: scale(1); }
-            14% { transform: scale(1.1); }
-            28% { transform: scale(1); }
-            42% { transform: scale(1.1); }
-            70% { transform: scale(1); }
-        }
-    </style>
-
-    <!-- 确保这个元素存在 -->
-    <div class="class-selector">
-        <label for="class-select"><i class="fas fa-school"></i> 选择班级：</label>
-        <select id="class-select" onchange="loadClassData()">
-            <option value="">请选择班级</option>
-        </select>
-    </div>
-
-    <div id="class-info" class="class-info" style="display: none;">
+    <!-- 主工作台：初始化后才显示 -->
+    <div id="mainDashboard" style="display: none; margin-top: 20px;">
         <div class="info-card">
-            <h3><i class="fas fa-info-circle"></i> 班级信息</h3>
+            <h3><i class="fas fa-id-card"></i> 班级档案</h3>
             <div class="info-content">
                 <p><strong>班级名称：</strong><span id="class-name"></span></p>
                 <p><strong>班主任：</strong><span id="class-teacher"></span></p>
-                <p><strong>创建时间：</strong><span id="class-created"></span></p>
+                <p><strong>系统状态：</strong><span style="color:#10b981;font-weight:bold;">健康运行中</span></p>
             </div>
         </div>
 
         <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-icon" style="background-color: #4CAF50;">
-                    <i class="fas fa-users"></i>
-                </div>
-                <div class="stat-content">
-                    <h3 id="total-students">0</h3>
-                    <p>学生总数</p>
+            <div class="stat-card"><div class="stat-icon" style="background:#4CAF50;"><i class="fas fa-users"></i></div><div class="stat-content"><h3 id="total-students">0</h3><p>学生总数</p></div></div>
+            <div class="stat-card"><div class="stat-icon" style="background:#2196F3;"><i class="fas fa-star"></i></div><div class="stat-content"><h3 id="avg-points">0</h3><p>平均积分</p></div></div>
+            <div class="stat-card"><div class="stat-icon" style="background:#FF9800;"><i class="fas fa-crown"></i></div><div class="stat-content"><h3 id="max-points">0</h3><p>最高积分</p></div></div>
+            <div class="stat-card"><div class="stat-icon" style="background:#9C27B0;"><i class="fas fa-history"></i></div><div class="stat-content"><h3 id="min-points">0</h3><p>最低积分</p></div></div>
+        </div>
+
+        <div class="recent-activity" style="max-height: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h3 style="margin:0;"><i class="fas fa-history"></i> 赛季积分实况看板</h3>
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <input type="date" id="statsDate" class="input-modern" style="width:150px; padding:0 10px; height:35px; font-size:13px;" onchange="loadGlobalStats()">
+                    <button class="btn-sm" onclick="loadGlobalStats()" style="background:#f1f5f9; color:#64748b; border:none; padding:8px 15px; border-radius:10px; cursor:pointer; font-weight:800;">刷新</button>
                 </div>
             </div>
-
-            <div class="stat-card">
-                <div class="stat-icon" style="background-color: #2196F3;">
-                    <i class="fas fa-star"></i>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 25px;">
+                <!-- 左侧：加分 -->
+                <div>
+                    <h4 style="color:#10b981; font-size:14px; font-weight:900; margin-bottom:15px; display:flex; align-items:center; gap:8px;">
+                        <i class="fas fa-plus-circle"></i> 荣誉加分榜
+                    </h4>
+                    <div id="plus-changes" style="min-height:300px; max-height:500px; overflow-y:auto; padding-right:5px;"></div>
                 </div>
-                <div class="stat-content">
-                    <h3 id="avg-points">0</h3>
-                    <p>平均积分</p>
-                </div>
-            </div>
-
-            <div class="stat-card">
-                <div class="stat-icon" style="background-color: #FF9800;">
-                    <i class="fas fa-crown"></i>
-                </div>
-                <div class="stat-content">
-                    <h3 id="max-points">0</h3>
-                    <p>最高积分</p>
-                </div>
-            </div>
-
-            <div class="stat-card">
-                <div class="stat-icon" style="background-color: #9C27B0;">
-                    <i class="fas fa-history"></i>
-                </div>
-                <div class="stat-content">
-                    <h3 id="min-points">0</h3>
-                    <p>最低积分</p>
+                <!-- 右侧：减分 -->
+                <div>
+                    <h4 style="color:#ef4444; font-size:14px; font-weight:900; margin-bottom:15px; display:flex; align-items:center; gap:8px;">
+                        <i class="fas fa-minus-circle"></i> 违纪扣分榜
+                    </h4>
+                    <div id="minus-changes" style="min-height:300px; max-height:500px; overflow-y:auto; padding-right:5px;"></div>
                 </div>
             </div>
         </div>
+    </div>
 
-        <div class="recent-activity">
-            <h3><i class="fas fa-history"></i> 最近活动</h3>
-            <div class="activity-list" id="recent-changes">
-                <!-- 最近积分变动将在这里显示 -->
+    <!-- 未初始化引导 -->
+    <div id="setupGuide" style="display:none; padding:100px 20px; text-align:center;">
+        <div style="font-size:80px; color:#e2e8f0; margin-bottom:30px;"><i class="fas fa-tools"></i></div>
+        <h2 style="font-size:24px; font-weight:900; color:#1e293b;">系统尚未初始化</h2>
+        <p style="color:#94a3b8; margin-bottom:40px;">请先安装班级，开启您的积分管理之旅</p>
+        <button class="btn btn-primary" style="padding:15px 40px; font-size:18px; border-radius:50px;" onclick="showClassModal()">立即安装班级</button>
+    </div>
+</div>
+
+<!-- 业务配置中心模态框 -->
+<div id="standardModal" class="modal">
+    <div class="modal-content" style="max-width: 850px; height: 85vh; display: flex; flex-direction: column;">
+        <div class="modal-header" style="background: #6366f1; color: white; display: flex; justify-content: space-between; align-items: center;">
+            <h2 style="color: white; margin: 0;"><i class="fas fa-tasks"></i> 积分业务配置中心</h2>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn-sm" onclick="exportStandards()" style="background:rgba(255,255,255,0.2);color:white;border:1px solid #fff;padding:5px 10px;border-radius:8px;cursor:pointer;">导出</button>
+                <button class="btn-sm" onclick="triggerImport()" style="background:rgba(255,255,255,0.2);color:white;border:1px solid #fff;padding:5px 10px;border-radius:8px;cursor:pointer;">导入</button>
+                <button class="btn-sm" onclick="resetToDefaultStandards()" style="background:rgba(255,255,255,0.2);color:white;border:1px solid #fff;padding:5px 10px;border-radius:8px;cursor:pointer;">初始化填充</button>
+                <span class="close" onclick="closeModal('standardModal')" style="color:white;position:static;cursor:pointer;font-size:24px;">&times;</span>
             </div>
         </div>
-
-        <div class="quick-actions">
-            <h3><i class="fas fa-bolt"></i> 快速操作</h3>
-            <div class="action-buttons">
-                <a href="/students" class="action-btn">
-                    <i class="fas fa-user-plus"></i>
-                    <span>添加学生</span>
-                </a>
-                <a href="/points" class="action-btn">
-                    <i class="fas fa-star-half-alt"></i>
-                    <span>管理积分</span>
-                </a>
-                <a href="/ranking" class="action-btn">
-                    <i class="fas fa-medal"></i>
-                    <span>查看排行榜</span>
-                </a>
-                <button class="action-btn" onclick="exportData()">
-                    <i class="fas fa-download"></i>
-                    <span>导出数据</span>
-                </button>
+        <div style="display: flex; flex:1; overflow: hidden;">
+            <div style="width: 180px; background: #f8fafc; border-right: 1px solid #e2e8f0; padding: 15px; display: flex; flex-direction: column; gap: 8px;">
+                <div class="std-area-tab active" onclick="switchStdArea('学业管理')">学业管理</div>
+                <div class="std-area-tab" onclick="switchStdArea('班级管理')">班级管理</div>
+                <div class="std-area-tab" onclick="switchStdArea('活动管理')">活动管理</div>
+                <div class="std-area-tab" onclick="switchStdArea('自定义')">其他/德育</div>
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; background: white;">
+                <div id="standardList" style="flex: 1; overflow-y: auto; padding: 20px;"></div>
+                <div style="padding: 20px; border-top: 1px solid #f1f5f9; background: #fcfcfc;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 100px 120px; gap: 15px;">
+                        <input type="text" id="newStdCat" placeholder="大类(如:语文)" class="input-modern">
+                        <input type="text" id="newStdName" placeholder="项目(如:作业)" class="input-modern">
+                        <input type="number" id="newStdPoints" placeholder="分值" class="input-modern">
+                        <button class="btn-premium" onclick="addStandard()"><i class="fas fa-plus"></i> 添加规则</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 </div>
+<input type="file" id="stdImportFile" style="display:none;" onchange="importStandards(this)" accept=".xlsx">
 
-<!-- 创建班级模态框 -->
-<div id="classModal" class="modal">
-    <div class="modal-content">
+<!-- 审批中心模态框 -->
+<div id="auditModal" class="modal">
+    <div class="modal-content" style="max-width: 650px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;">
         <div class="modal-header">
-            <h2><i class="fas fa-plus-circle"></i> 创建新班级</h2>
-            <span class="close" onclick="closeClassModal()">&times;</span>
+            <h3><i class="fas fa-clipboard-check"></i> 待办审批</h3>
+            <div><label style="font-size:14px;cursor:pointer;"><input type="checkbox" id="auditSelectAll" onchange="toggleAllAudits(this.checked)"> 全选</label><span class="close" onclick="closeModal('auditModal')">&times;</span></div>
         </div>
-        <div class="modal-body">
-            <form id="classForm" onsubmit="createClass(event)">
-                <div class="form-group">
-                    <label for="className"><i class="fas fa-school"></i> 班级名称 *</label>
-                    <input type="text" id="className" required placeholder="例如：三年级一班">
-                </div>
-                <div class="form-group">
-                    <label for="classTeacher"><i class="fas fa-chalkboard-teacher"></i> 班主任</label>
-                    <input type="text" id="classTeacher" placeholder="请输入班主任姓名">
-                </div>
-                <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeClassModal()">取消</button>
-                    <button type="submit" class="btn btn-primary">创建班级</button>
-                </div>
+        <div id="auditList" style="flex: 1; overflow-y: auto; background: #f8fafc;"></div>
+        <div id="auditFooter" style="padding: 15px; border-top: 1px solid #f1f5f9; display: none; justify-content: flex-end; gap: 10px;">
+            <button onclick="batchProcessAudits('reject')" style="background:#fff;color:#ef4444;border:1px solid #fee2e2;padding:8px 15px;border-radius:10px;cursor:pointer;">拒绝</button>
+            <button onclick="batchProcessAudits('approve')" style="background:#ef4444;color:#fff;border:none;padding:8px 20px;border-radius:10px;cursor:pointer;font-weight:bold;">一键通过</button>
+        </div>
+    </div>
+</div>
+
+<!-- 安装班级模态框 -->
+<div id="classModal" class="modal">
+    <!-- ... 内容 ... -->
+    <div class="modal-content" style="max-width: 400px; border-radius:24px;">
+        <div class="modal-header" style="background:#6366f1; color:white;"><h2><i class="fas fa-plus-circle"></i> 安装班级</h2></div>
+        <div class="modal-body" style="padding:30px;">
+            <form onsubmit="setupSystem(event)">
+                <div class="form-group"><label>班级名称 *</label><input type="text" id="className" required class="form-control" placeholder="如：三年级二班"></div>
+                <div class="form-group"><label>班主任姓名</label><input type="text" id="classTeacher" class="form-control" placeholder="老师怎么称呼？"></div>
+                <button type="submit" class="btn btn-primary" style="width:100%; height:50px; font-weight:bold; font-size:16px;">完成安装并开启系统</button>
             </form>
         </div>
     </div>
 </div>
 
-<script>
-// 确保 loadClassData 函数存在
-if (typeof loadClassData === 'undefined') {
-    function loadClassData() {
-        const classId = document.getElementById('class-select').value;
-        if (!classId) {
-            console.log("没有选择班级");
-            return;
-        }
-        
-        console.log("加载班级数据，班级ID:", classId);
-        // 这里可以添加加载班级数据的逻辑
-    }
-}
+<!-- 卸载验证模态框 -->
+<div id="resetAuthModal" class="modal">
+    <div class="modal-content" style="max-width: 350px; border-radius: 24px;">
+        <div class="modal-header" style="background: #ef4444; color: white;">
+            <h2 style="color: white; margin: 0; font-size: 1.2rem;"><i class="fas fa-shield-alt"></i> 危险操作验证</h2>
+        </div>
+        <div class="modal-body" style="padding: 25px; text-align: center;">
+            <div style="background: #fef2f2; padding: 12px; border-radius: 12px; margin-bottom: 20px; color: #ef4444; font-size: 13px; font-weight: bold;">
+                即将永久抹除所有数据，请输入管理密码确认身份。
+            </div>
+            <input type="password" id="resetPasswordInput" class="form-control" style="font-size: 24px; text-align: center; letter-spacing: 8px; height: 50px;" placeholder="••••••">
+            <button class="btn btn-danger" onclick="verifyResetPassword()" style="width: 100%; margin-top: 20px; height: 50px; font-weight: bold; background: #ef4444;">确认彻底卸载</button>
+            <button onclick="closeModal('resetAuthModal')" style="margin-top:15px; background:none; border:none; color:#94a3b8; cursor:pointer;">取消操作</button>
+        </div>
+    </div>
+</div>
 
-// 确保 showClassModal 函数存在
-if (typeof showClassModal === 'undefined') {
-    function showClassModal() {
-        alert("创建班级功能");
-        // 这里可以添加创建班级模态框的逻辑
-    }
-}
-</script>
 {% endblock %}
 
 {% block scripts %}
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    loadClasses();
-});
+let currentStdArea = '学业管理';
+let allStandardsData = [];
 
-// --- 删除班级流程逻辑 ---
+document.addEventListener('DOMContentLoaded', checkSystemStatus);
 
-function startDeleteProcess() {
-    document.getElementById('deleteAuthModal').style.display = 'block';
-    document.getElementById('deletePasswordInput').value = '';
-    document.getElementById('deletePwdError').style.display = 'none';
-    setTimeout(() => document.getElementById('deletePasswordInput').focus(), 100);
+// --- 单班级模式核心逻辑 ---
+async function checkSystemStatus() {
+    const res = await fetch('/api/system/info');
+    const info = await res.json();
+    
+    if (!info) {
+        document.getElementById('setupGuide').style.display = 'block';
+        document.getElementById('mainDashboard').style.display = 'none';
+        document.getElementById('classDisplayName').innerText = '系统待安装';
+        document.getElementById('btnCreateClass').style.display = 'block';
+    } else {
+        document.getElementById('setupGuide').style.display = 'none';
+        document.getElementById('mainDashboard').style.display = 'block';
+        document.getElementById('classDisplayName').innerText = info.class_name;
+        document.getElementById('class-name').innerText = info.class_name;
+        document.getElementById('class-teacher').innerText = info.teacher_name || '未设置';
+        document.getElementById('btnCreateClass').style.display = 'none'; 
+        
+        if(!document.getElementById('statsDate').value) {
+            document.getElementById('statsDate').value = new Date().toISOString().split('T')[0];
+        }
+        loadGlobalStats();
+        loadPendingAudits();
+    }
 }
 
-function closeModal(id) {
-    document.getElementById(id).style.display = 'none';
+async function setupSystem(e) {
+    e.preventDefault();
+    const data = { class_name: document.getElementById('className').value, teacher_name: document.getElementById('classTeacher').value };
+    const res = await fetch('/api/system/setup', { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    if(res.ok) { closeModal('classModal'); checkSystemStatus(); }
 }
 
-async function verifyDeletePassword() {
-    const pwd = document.getElementById('deletePasswordInput').value;
+function startSystemReset() {
+    document.getElementById('resetAuthModal').style.display = 'block';
+    document.getElementById('resetPasswordInput').value = '';
+    document.getElementById('resetPasswordInput').focus();
+}
+
+async function verifyResetPassword() {
+    const pwd = document.getElementById('resetPasswordInput').value;
     if(!pwd) return;
-
     try {
         const res = await fetch('/api/verify_password', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ password: pwd })
         });
-        
         if (res.ok) {
-            closeModal('deleteAuthModal');
-            document.getElementById('classDeleteModal').style.display = 'block';
-            loadClasses(); // 确保下拉框有数据
+            if(confirm('密码验证成功！确定要立即永久销毁该班级的所有数据吗？')) {
+                const resetRes = await fetch('/api/system/reset', { method: 'POST' });
+                if(resetRes.ok) location.reload();
+            }
         } else {
-            document.getElementById('deletePwdError').style.display = 'block';
-            document.getElementById('deletePasswordInput').value = '';
-            document.getElementById('deletePasswordInput').focus();
+            alert('密码错误');
+            closeModal('resetAuthModal');
         }
-    } catch (e) {
-        alert('验证出错');
-    }
+    } catch (e) { alert('验证失败'); }
 }
 
-async function executeDeleteClass() {
-    const classSelect = document.getElementById('deleteClassSelect');
-    const classId = classSelect.value;
-    if (!classId) {
-        alert('请选择要删除的班级');
-        return;
-    }
-
-    const className = classSelect.options[classSelect.selectedIndex].text;
-    
-    if(!confirm(`此操作将物理删除【${className}】的所有数据（学生、积分、评语等）且不可撤销。\n\n您确定要继续吗？`)) {
-        return;
-    }
-
+async function loadGlobalStats() {
+    const selDate = document.getElementById('statsDate').value;
     try {
-        const res = await fetch(`/api/classes/${classId}`, {
-            method: 'DELETE'
-        });
+        const res = await fetch(`/api/classes/1/stats?date=${selDate}`);
+        const data = await res.json();
+        document.getElementById('total-students').innerText = data.total_students;
+        document.getElementById('avg-points').innerText = data.avg_points;
+        document.getElementById('max-points').innerText = data.max_points;
+        document.getElementById('min-points').innerText = data.min_points;
         
-        if (res.ok) {
-            // 隐藏删除框
-            closeModal('classDeleteModal');
-            // 显示告别弹窗
-            document.getElementById('farewellClassName').textContent = className;
-            document.getElementById('farewellModal').style.display = 'block';
-        } else {
-            const data = await res.json();
-            alert('删除失败: ' + data.error);
-        }
-    } catch (e) {
-        alert('网络请求失败');
+        document.getElementById('plus-changes').innerHTML = data.plus_changes.map(c => `
+            <div class="activity-item" style="padding: 10px 15px; margin-bottom:8px;">
+                <div class="activity-content-flat">
+                    <div class="activity-name-flat" style="font-size:15px; min-width:60px;">${c.student_name}</div>
+                    <div class="activity-reason-flat" style="font-size:12px;">${c.reason}</div>
+                </div>
+                <div class="activity-points" style="color:#10b981; font-size:16px;">+${c.change_amount}</div>
+            </div>`).join('') || '<div style="text-align:center;padding:20px;color:#cbd5e1;font-size:12px;">暂无记录</div>';
+
+        document.getElementById('minus-changes').innerHTML = data.minus_changes.map(c => `
+            <div class="activity-item" style="padding: 10px 15px; margin-bottom:8px;">
+                <div class="activity-content-flat">
+                    <div class="activity-name-flat" style="font-size:15px; min-width:60px;">${c.student_name}</div>
+                    <div class="activity-reason-flat" style="font-size:12px;">${c.reason}</div>
+                </div>
+                <div class="activity-points" style="color:#ef4444; font-size:16px;">${c.change_amount}</div>
+            </div>`).join('') || '<div style="text-align:center;padding:20px;color:#cbd5e1;font-size:12px;">暂无记录</div>';
+    } catch(e) { console.error(e); }
+}
+
+async function openStandardModal() { document.getElementById('standardModal').style.display='block'; await loadStandards(); }
+async function loadStandards() { const res = await fetch('/api/point_standards?raw=true'); allStandardsData = await res.json(); renderStandards(); }
+function switchStdArea(a) { currentStdArea = a; document.querySelectorAll('.std-area-tab').forEach(t => t.classList.toggle('active', t.innerText.includes(a==='自定义'?'其他':a))); renderStandards(); }
+
+function renderStandards() {
+    const container = document.getElementById('standardList'); container.innerHTML = '';
+    const filtered = allStandardsData.filter(s => s.area === currentStdArea);
+    const groups = {}; filtered.forEach(item => { if (!groups[item.category]) groups[item.category] = []; groups[item.category].push(item); });
+    for (const catName in groups) {
+        const card = document.createElement('div');
+        card.style.cssText = 'margin-bottom:20px;border:1px solid #e2e8f0;border-radius:15px;overflow:hidden;background:#fff;';
+        card.innerHTML = `
+            <div style="background:#f8fafc;padding:10px 20px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:10px;">
+                <input type="text" value="${catName}" id="group-name-${catName}" style="font-weight:800;border:none;background:transparent;font-size:15px;width:200px;" onblur="checkGroupNameChange(this)" data-old="${catName}">
+            </div>
+            <div style="padding:10px;" id="items-${catName}"></div>`;
+        const itemsBox = card.querySelector(`#items-${catName}`);
+        groups[catName].forEach(item => {
+            const row = document.createElement('div');
+            row.style.cssText = 'display:grid;grid-template-columns:1fr 80px 80px;padding:8px 15px;align-items:center;border-bottom:1px solid #f8fafc;';
+            row.innerHTML = `
+                <input type="text" id="std-name-${item.id}" value="${item.name}" style="border:none;background:transparent;">
+                <input type="number" id="std-pts-${item.id}" value="${item.default_points}" style="text-align:center;font-weight:800;border:none;background:transparent;">
+                <div style="display:flex;gap:10px;justify-content:center;">
+                    <button onclick="updateStandardDetail(${item.id},'${catName}')" style="color:#6366f1;background:none;border:none;cursor:pointer;"><i class="fas fa-save"></i></button>
+                    <button onclick="deleteStandard(${item.id})" style="color:#94a3b8;background:none;border:none;cursor:pointer;"><i class="fas fa-trash-alt"></i></button>
+                </div>`;
+            itemsBox.appendChild(row);
+        });
+        container.appendChild(card);
     }
 }
 
-// 绑定回车键验证密码
-document.getElementById('deletePasswordInput')?.addEventListener('keypress', (e) => {
-    if(e.key === 'Enter') verifyDeletePassword();
-});
+async function checkGroupNameChange(el) {
+    if(el.value === el.dataset.old) return;
+    await fetch('/api/point_standards/batch_update_category', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({old_category:el.dataset.old, new_category:el.value, area:currentStdArea})});
+    await loadStandards();
+}
+
+async function updateStandardDetail(id, cat) {
+    const name = document.getElementById(`std-name-${id}`).value;
+    const pts = document.getElementById(`std-pts-${id}`).value;
+    await fetch(`/api/point_standards/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({area:currentStdArea, category:cat, name:name, points:parseInt(pts)})});
+    await loadStandards();
+}
+
+async function addStandard() {
+    const cat = document.getElementById('newStdCat').value;
+    const name = document.getElementById('newStdName').value;
+    const pts = parseInt(document.getElementById('newStdPoints').value);
+    if(!cat || !name || isNaN(pts)) return alert('请完整填写');
+    if ((currentStdArea === '学业管理' || currentStdArea === '班级管理') && pts >= 0) return alert('扣分项请填负数');
+    if (currentStdArea === '活动管理' && pts <= 0) return alert('加分项请填正数');
+    await fetch('/api/point_standards', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({area:currentStdArea, category:cat, name:name, points:pts})});
+    document.getElementById('newStdCat').value = ''; document.getElementById('newStdName').value = ''; document.getElementById('newStdPoints').value = '';
+    await loadStandards();
+}
+
+async function deleteStandard(id) { if(confirm('确定删除吗？')) { await fetch(`/api/point_standards/${id}`, {method:'DELETE'}); await loadStandards(); } }
+async function resetToDefaultStandards() { if(confirm('重置为系统默认标准？')) { await fetch('/api/point_standards/reset', {method:'POST'}); await loadStandards(); } }
+function exportStandards() { window.location.href = '/api/point_standards/export'; }
+function triggerImport() { document.getElementById('stdImportFile').click(); }
+async function importStandards(input) {
+    const formData = new FormData(); formData.append('file', input.files[0]);
+    await fetch('/api/point_standards/import', {method:'POST', body:formData});
+    await loadStandards(); input.value='';
+}
+
+async function loadPendingAudits() {
+    const res = await fetch('/api/audit/pending');
+    const list = await res.json();
+    const badge = document.getElementById('auditBadge');
+    if(list.length>0) { badge.innerText=list.length; badge.style.display='block'; } else badge.style.display='none';
+    return list;
+}
+
+async function openAuditModal() {
+    const list = await loadPendingAudits();
+    const container = document.getElementById('auditList');
+    container.innerHTML = list.length === 0 ? '<div style="padding:40px;text-align:center;color:#94a3b8;">暂无待办</div>' : '';
+    document.getElementById('auditFooter').style.display = list.length === 0 ? 'none' : 'flex';
+    list.forEach(item => {
+        const div = document.createElement('div');
+        div.style.cssText = 'padding:15px 25px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;background:#fff;';
+        div.innerHTML = `
+            <input type="checkbox" class="audit-item-check" data-id="${item.id}">
+            <div style="flex:1; margin-left:15px;">
+                <div style="font-weight:800;">${item.student_name} <span style="color:${item.change_amount>0?'green':'red'}">${item.change_amount>0?'+':''}${item.change_amount}</span></div>
+                <div style="font-size:12px;color:#64748b;">${item.reason}</div>
+            </div>
+            <button onclick="processAuditItem(${item.id},'approve')" style="background:#f0fdf4;color:#16a34a;border:none;padding:8px 15px;border-radius:10px;font-weight:bold;cursor:pointer;">通过</button>
+        `;
+        container.appendChild(div);
+    });
+    document.getElementById('auditModal').style.display = 'block';
+}
+
+function toggleAllAudits(c) { document.querySelectorAll('.audit-item-check').forEach(i => i.checked=c); }
+async function batchProcessAudits(a) {
+    const ids = Array.from(document.querySelectorAll('.audit-item-check:checked')).map(i => parseInt(i.dataset.id));
+    if(ids.length===0) return;
+    await fetch('/api/audit/process', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({audit_ids:ids, action:a})});
+    await openAuditModal(); loadGlobalStats();
+}
+
+async function processAuditItem(id, a) {
+    await fetch('/api/audit/process', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({audit_ids:[id], action:a})});
+    await openAuditModal(); loadGlobalStats();
+}
+
+function closeModal(id) { document.getElementById(id).style.display='none'; }
+function showClassModal() { document.getElementById('classModal').style.display='block'; }
 </script>
 {% endblock %}
