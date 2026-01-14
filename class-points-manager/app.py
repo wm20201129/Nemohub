@@ -1,89 +1,80 @@
-from flask import Flask, render_template, jsonify, request, send_file, make_response, session, redirect, url_for
+from flask import Flask, render_template, jsonify, request, send_file, make_response, session, redirect, url_for, send_from_directory
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
-import sqlite3
-import json
-import os
+import sqlite3, json, os, io, sys, re, time, threading, datetime, socket, webbrowser
 from datetime import datetime
-import openpyxl
 from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Font
-import io
-import tempfile
-import time
-import socket
-import webbrowser
-import subprocess
-import threading
-import re
-from config import Config
+from pyngrok import ngrok, conf
 
+# --- 1. 配置与路径 ---
 class Config:
-    SECRET_KEY = os.environ.get('SECRET_KEY') or 'class-points-manager-secret-2025'
-    DATABASE_PATH = os.path.join(os.path.dirname(__file__), 'data', 'class_points.db')
-    UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'static', 'uploads')
-    DEBUG = True
+    SECRET_KEY = 'class-points-manager-secret-2025'
+    if getattr(sys, 'frozen', False):
+        BASE_DIR = os.path.dirname(sys.executable)
+    else:
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    DATA_DIR = os.path.join(BASE_DIR, 'data')
+    UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static', 'uploads')
+    DATABASE_PATH = os.path.join(DATA_DIR, 'class_points.db')
+    NGROK_BIN_DIR = os.path.join(DATA_DIR, 'ngrok_bin')
 
 app = Flask(__name__)
 app.config.from_object(Config)
-app.secret_key = 'cp-manager-secure-key' 
-CORS(app)  # 允许跨域请求
+app.secret_key = Config.SECRET_KEY
+CORS(app)
 
-# 确保上传目录存在
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+os.makedirs(Config.DATA_DIR, exist_ok=True)
+os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(Config.NGROK_BIN_DIR, exist_ok=True)
+conf.get_default().ngrok_path = os.path.join(Config.NGROK_BIN_DIR, "ngrok.exe")
 
-def get_system_password():
-    """从本地文件读取系统密码"""
-    password_file = os.path.join(os.path.dirname(__file__), 'password.txt')
-    if not os.path.exists(password_file):
-        with open(password_file, 'w', encoding='utf-8') as f:
-            f.write('123456')
-        return '123456'
-    with open(password_file, 'r', encoding='utf-8') as f:
-        return f.read().strip()
+# --- 2. 数据库初始化 (单班级闭环架构) ---
+def init_db():
+    conn = sqlite3.connect(Config.DATABASE_PATH)
+    c = conn.cursor()
+    # 系统配置
+    c.execute('CREATE TABLE IF NOT EXISTS system_config (id INTEGER PRIMARY KEY, class_name TEXT, teacher_name TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
+    # 基础业务表 (自动指向 class_id=1)
+    c.execute('CREATE TABLE IF NOT EXISTS classes (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, teacher TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
+    c.execute('CREATE TABLE IF NOT EXISTS groups (id INTEGER PRIMARY KEY AUTOINCREMENT, class_id INTEGER DEFAULT 1, name TEXT NOT NULL UNIQUE, color TEXT DEFAULT "#667eea")')
+    c.execute('CREATE TABLE IF NOT EXISTS students (id INTEGER PRIMARY KEY AUTOINCREMENT, class_id INTEGER DEFAULT 1, group_id INTEGER, name TEXT NOT NULL, student_id TEXT NOT NULL UNIQUE, points INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
+    c.execute('CREATE TABLE IF NOT EXISTS points_history (id INTEGER PRIMARY KEY AUTOINCREMENT, student_id INTEGER, change_amount INTEGER NOT NULL, reason TEXT, teacher TEXT, status TEXT DEFAULT "pending", reward_id INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
+    c.execute('CREATE TABLE IF NOT EXISTS group_points_history (id INTEGER PRIMARY KEY AUTOINCREMENT, group_id INTEGER, change_amount INTEGER NOT NULL, reason TEXT, teacher TEXT, status TEXT DEFAULT "pending", created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
+    c.execute('CREATE TABLE IF NOT EXISTS point_standards (id INTEGER PRIMARY KEY AUTOINCREMENT, area TEXT, category TEXT, name TEXT, default_points INTEGER, UNIQUE(area, category, name))')
+    c.execute('CREATE TABLE IF NOT EXISTS rewards (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, description TEXT, points_cost INTEGER NOT NULL, image_path TEXT, stock INTEGER DEFAULT 10, is_special INTEGER DEFAULT 0, is_group_reward INTEGER DEFAULT 0, is_grocery INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
+    c.execute('CREATE TABLE IF NOT EXISTS redemptions (id INTEGER PRIMARY KEY AUTOINCREMENT, student_id INTEGER, reward_id INTEGER, redeemed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
+    c.execute('CREATE TABLE IF NOT EXISTS group_redemptions (id INTEGER PRIMARY KEY AUTOINCREMENT, group_id INTEGER, reward_id INTEGER, redeemed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
+    c.execute('CREATE TABLE IF NOT EXISTS auctions (id INTEGER PRIMARY KEY AUTOINCREMENT, reward_id INTEGER, class_id INTEGER DEFAULT 1, status TEXT DEFAULT "active", current_price INTEGER DEFAULT 0, highest_bidder_id INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, finished_at TIMESTAMP)')
+    c.execute('CREATE TABLE IF NOT EXISTS bounties (id INTEGER PRIMARY KEY AUTOINCREMENT, reward_id INTEGER, class_id INTEGER DEFAULT 1, target_points INTEGER, allowed_reasons TEXT, start_date DATE, end_date DATE, status TEXT DEFAULT "active", winner_id INTEGER, description TEXT, type TEXT DEFAULT "individual", created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, finished_at TIMESTAMP)')
+    
+    # --- 性能优化：添加索引 ---
+    # 为积分历史表添加联合索引，加速查询和统计
+    c.execute('CREATE INDEX IF NOT EXISTS idx_ph_student_status ON points_history(student_id, status)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_ph_created ON points_history(created_at)')
+    # 为学生表添加索引
+    c.execute('CREATE INDEX IF NOT EXISTS idx_stu_group ON students(group_id)')
+    
+    conn.commit()
+    conn.close()
 
-from pyngrok import ngrok, conf
+def get_db_connection():
+    if not os.path.exists(Config.DATABASE_PATH): init_db()
+    conn = sqlite3.connect(Config.DATABASE_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-import sys
-
-# 获取程序运行的根目录 (适配源码和 PyInstaller 打包后的路径)
-if getattr(sys, 'frozen', False):
-    BASE_DIR = os.path.dirname(sys.executable)
-else:
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# 所有的路径都基于 BASE_DIR
-DATA_DIR = os.path.join(BASE_DIR, 'data')
-os.makedirs(DATA_DIR, exist_ok=True)
-
-# 覆盖 Flask 的数据库路径配置
-app.config['DATABASE_PATH'] = os.path.join(DATA_DIR, 'class_points.db')
-app.config['UPLOAD_FOLDER'] = os.path.join(BASE_DIR, 'static', 'uploads')
-
-# --- 内网穿透配置 ---
+# --- 3. 内网穿透 (Ngrok 集成) ---
 current_online_url = None
 tunnel_logs = []
-
-# 将 Ngrok 程序锁定在 data 目录下，实现真正的便携
-ngrok_bin_dir = os.path.join(DATA_DIR, 'ngrok_bin')
-os.makedirs(ngrok_bin_dir, exist_ok=True)
-conf.get_default().ngrok_path = os.path.join(ngrok_bin_dir, "ngrok.exe")
 
 def log_callback(log):
     global tunnel_logs
     line = str(log).strip()
-    # 过滤掉一些没用的心跳日志，只保留关键信息
     if "t=" in line:
-        # 提取 msg= 后的内容
         msg_match = re.search(r'msg="([^"]+)"', line)
-        if msg_match:
-            tunnel_logs.append(msg_match.group(1))
-    else:
-        tunnel_logs.append(line)
-    
-    # 只保留最近 20 条
-    if len(tunnel_logs) > 20:
-        tunnel_logs.pop(0)
+        if msg_match: tunnel_logs.append(msg_match.group(1))
+    else: tunnel_logs.append(line)
+    if len(tunnel_logs) > 20: tunnel_logs.pop(0)
 
 @app.route('/api/tunnel/action', methods=['POST'])
 def tunnel_action():
@@ -91,2325 +82,1027 @@ def tunnel_action():
     data = request.json
     action = data.get('action')
     token = data.get('token', '').strip()
-    
-    token_file = os.path.join(os.path.dirname(__file__), 'data', 'ngrok_token.txt')
+    # 统一使用 Config.DATA_DIR 保证便携性
+    token_file = os.path.join(Config.DATA_DIR, 'ngrok_token.txt')
     
     if action == 'start':
         tunnel_logs = ["准备初始化 Ngrok..."]
         try:
-            # 配置 pyngrok 实时捕获日志
-            py_conf = conf.get_default()
-            py_conf.log_event_callback = log_callback
-            
+            conf.get_default().log_event_callback = log_callback
             if token:
                 ngrok.set_auth_token(token)
                 with open(token_file, 'w') as f: f.write(token)
-            else:
-                if os.path.exists(token_file):
-                    with open(token_file, 'r') as f: 
-                        saved_token = f.read().strip()
-                        ngrok.set_auth_token(saved_token)
-                else:
-                    return jsonify({'success': False, 'error': 'needs_token'})
+            elif os.path.exists(token_file):
+                with open(token_file, 'r') as f: 
+                    saved_token = f.read().strip()
+                    ngrok.set_auth_token(saved_token)
+            else: 
+                return jsonify({'success': False, 'error': 'needs_token'})
 
             if not current_online_url:
                 tunnel_logs.append("正在启动隧道进程...")
-                public_url = ngrok.connect(5001).public_url
-                current_online_url = public_url
-            
+                current_online_url = ngrok.connect(5001).public_url
             return jsonify({'success': True, 'url': current_online_url})
-            
         except Exception as e:
             error_msg = str(e)
             tunnel_logs.append(f"错误: {error_msg}")
             if "authtoken" in error_msg.lower():
                 return jsonify({'success': False, 'error': 'invalid_token'})
             return jsonify({'success': False, 'error': error_msg})
-    
     elif action == 'stop':
         try:
             ngrok.kill()
             current_online_url = None
-            tunnel_logs = ["隧道已手动关闭"]
+            tunnel_logs = ["隧道已关闭"]
             return jsonify({'success': True})
-        except:
-            return jsonify({'success': False})
-
-@app.route('/api/tunnel/logs')
-def get_tunnel_logs():
-    return jsonify(tunnel_logs)
+        except: return jsonify({'success': False})
 
 @app.route('/api/tunnel/status')
-def tunnel_status():
-    return jsonify({
-        'active': current_online_url is not None,
-        'url': current_online_url
-    })
+def tunnel_status(): return jsonify({'active': current_online_url is not None, 'url': current_online_url})
+
+@app.route('/api/tunnel/logs')
+def get_tunnel_logs(): return jsonify(tunnel_logs)
+
+@app.route('/api/system/reset', methods=['POST'])
+def system_reset():
+    """彻底卸载系统：清空所有业务数据"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        tables = ['system_config', 'classes', 'groups', 'students', 'points_history', 
+                  'group_points_history', 'rewards', 'redemptions', 'group_redemptions', 
+                  'student_evaluations', 'auctions', 'bounties']
+        for table in tables:
+            cursor.execute(f'DELETE FROM {table}')
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# --- 4. 核心业务接口 (单班级简化版) ---
+
+@app.route('/api/system/info')
+def get_system_info():
+    conn = get_db_connection()
+    info = conn.execute('SELECT * FROM system_config LIMIT 1').fetchone()
+    conn.close()
+    return jsonify(dict(info) if info else None)
+
+@app.route('/api/system/setup', methods=['POST'])
+def system_setup():
+    data = request.json
+    conn = get_db_connection()
+    conn.execute('INSERT OR REPLACE INTO system_config (id, class_name, teacher_name) VALUES (1, ?, ?)', (data['class_name'], data.get('teacher_name', '')))
+    conn.execute('INSERT OR REPLACE INTO classes (id, name, teacher) VALUES (1, ?, ?)', (data['class_name'], data.get('teacher_name', '')))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+@app.route('/api/classes', methods=['GET'])
+def get_classes():
+    """获取班级 (单班级模式：始终返回 ID 为 1 的班级)"""
+    try:
+        conn = get_db_connection()
+        c = conn.execute('SELECT * FROM classes LIMIT 1').fetchone()
+        conn.close()
+        return jsonify([dict(c)] if c else [])
+    except Exception as e:
+        return jsonify([])
+
+@app.route('/api/students', methods=['GET', 'POST'])
+def handle_students():
+    conn = get_db_connection()
+    if request.method == 'POST':
+        data = request.json
+        conn.execute('INSERT INTO students (class_id, name, student_id, group_id) VALUES (1, ?, ?, ?)', (data['name'], data['student_id'], data.get('group_id')))
+        conn.commit()
+        return jsonify({'success': True})
+    rows = conn.execute('SELECT s.*, g.name as group_name FROM students s LEFT JOIN groups g ON s.group_id = g.id ORDER BY s.name').fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+@app.route('/api/students/<int:sid>/quick_points', methods=['POST'])
+def quick_points(sid):
+    """直接增减积分 (跳过审核)"""
+    try:
+        data = request.json
+        change = int(data.get('change_amount', 1))
+        reason = data.get('reason', '[互动管理/随机点名] 幸运抽中加分')
+        conn = get_db_connection()
+        conn.execute('UPDATE students SET points = points + ? WHERE id = ?', (change, sid))
+        conn.execute('INSERT INTO points_history (student_id, change_amount, reason, teacher, status) VALUES (?, ?, ?, ?, "approved")',
+                     (sid, change, reason, data.get('teacher', '系统')))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/groups/<int:gid>/quick_points', methods=['POST'])
+def group_quick_points(gid):
+    """小组全员加分"""
+    try:
+        data = request.json
+        change = int(data.get('change_amount', 1))
+        reason = data.get('reason', '[互动管理/随机点名] 小组幸运抽中')
+        conn = get_db_connection()
+        # 1. 找到所有组员
+        members = conn.execute('SELECT id FROM students WHERE group_id = ?', (gid,)).fetchall()
+        for m in members:
+            conn.execute('UPDATE students SET points = points + ? WHERE id = ?', (change, m['id']))
+            conn.execute('INSERT INTO points_history (student_id, change_amount, reason, teacher, status) VALUES (?, ?, ?, ?, "approved")',
+                         (m['id'], change, reason, data.get('teacher', '系统')))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'count': len(members)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/groups', methods=['GET', 'POST'])
+def handle_groups():
+    conn = get_db_connection()
+    if request.method == 'POST':
+        data = request.json
+        conn.execute('INSERT INTO groups (class_id, name, color) VALUES (1, ?, ?)', (data['name'], data.get('color', '#667eea')))
+        conn.commit()
+        return jsonify({'success': True})
+    rows = conn.execute('SELECT g.*, COUNT(s.id) as student_count, AVG(s.points) as avg_points FROM groups g LEFT JOIN students s ON g.id = s.group_id GROUP BY g.id').fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+@app.route('/api/point_standards', methods=['GET', 'POST'])
+def handle_standards():
+    conn = get_db_connection()
+    if request.method == 'POST':
+        data = request.json
+        conn.execute('INSERT INTO point_standards (area, category, name, default_points) VALUES (?, ?, ?, ?)', 
+                     (data['area'], data['category'], data['name'], data['points']))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    
+    # GET 支持按 Area 模糊匹配
+    area = request.args.get('area')
+    if area:
+        rows = conn.execute('SELECT * FROM point_standards WHERE area LIKE ?', (f"%{area.replace('管理','')}%",)).fetchall()
+    else:
+        rows = conn.execute('SELECT * FROM point_standards ORDER BY area, category').fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+@app.route('/api/point_standards/<int:sid>', methods=['PUT', 'DELETE'])
+def update_delete_standard(sid):
+    conn = get_db_connection()
+    if request.method == 'DELETE':
+        conn.execute('DELETE FROM point_standards WHERE id = ?', (sid,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    
+    data = request.json
+    conn.execute('UPDATE point_standards SET area=?, category=?, name=?, default_points=? WHERE id=?',
+                 (data['area'], data['category'], data['name'], data['points'], sid))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+@app.route('/api/point_standards/batch_update_category', methods=['POST'])
+def batch_update_std_category():
+    data = request.json
+    conn = get_db_connection()
+    conn.execute('UPDATE point_standards SET category = ? WHERE category = ? AND area = ?',
+                 (data['new_category'], data['old_category'], data['area']))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+@app.route('/api/point_standards/reset', methods=['POST'])
+def reset_standards():
+    """重置积分理由库为最新设计的逻辑 (学科扣分 + 荣誉加分)"""
+    try:
+        conn = get_db_connection()
+        conn.execute('DELETE FROM point_standards')
+        
+        subjects = ['语文', '数学', '英语', '物理', '化学', '生物', '政治', '历史', '地理']
+        standards = []
+
+        # 1. 学业管理 (学科扣分)
+        for sub in subjects:
+            standards.append(('学业管理', sub, '作业缺交/抄袭/敷衍', -10))
+            standards.append(('学业管理', sub, '随堂测验/单元考不及格', -10))
+            standards.append(('学业管理', sub, '课堂违纪(手机/睡觉/闲聊)', -5))
+            standards.append(('学业管理', sub, '笔记缺失/书本未带', -2))
+
+        # 2. 班级管理 (纪律扣分)
+        attend_cats = ['早自习', '午休纪律', '晚自习', '课堂考勤', '集体活动']
+        for cat in attend_cats:
+            standards.append(('班级管理', cat, '迟到/早退', -5))
+            standards.append(('班级管理', cat, '旷课/擅自脱岗', -20))
+            standards.append(('班级管理', cat, '大声喧哗/打闹违纪', -10))
+
+        # 3. 活动管理 (奖励项)
+        act_cats = ['校级竞赛', '体育运动', '艺术文化', '社会实践']
+        for cat in act_cats:
+            standards.append(('活动管理', cat, '代表班级参赛(基础奖)', 5))
+            standards.append(('活动管理', cat, '获得校级名次/奖项', 15))
+            standards.append(('活动管理', cat, '市级及以上重大荣誉', 50))
+
+        # 4. 自定义 (原德育/其他加分项)
+        plus_cats = ['品德楷模', '班级勤务', '同伴互助']
+        for cat in plus_cats:
+            standards.append(('自定义', cat, '拾金不昧/见义勇为', 20))
+            standards.append(('自定义', cat, '主动承担额外扫除', 5))
+            standards.append(('自定义', cat, '辅导同学学业(获认可)', 10))
+            
+        # 5. 自定义 (负分项)
+        standards.append(('自定义', '行为规范', '损坏公物/破坏环境', -10))
+        standards.append(('自定义', '行为规范', '浪费粮食/水电', -5))
+        standards.append(('自定义', '行为规范', '仪容仪表不整', -2))
+
+        conn.executemany('INSERT INTO point_standards (area, category, name, default_points) VALUES (?, ?, ?, ?)', standards)
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/point_standards/export', methods=['GET'])
+def export_standards():
+    """导出积分理由库到 Excel"""
+    try:
+        conn = get_db_connection()
+        rows = conn.execute('SELECT area, category, name, default_points FROM point_standards ORDER BY area, category').fetchall()
+        conn.close()
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "积分评分标准"
+        ws.append(["业务大类", "项目分类", "事项名称", "默认分值"])
+        
+        for r in rows:
+            ws.append([r['area'], r['category'], r['name'], r['default_points']])
+
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        return send_file(output, as_attachment=True, download_name="积分评分标准.xlsx")
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/point_standards/import', methods=['POST'])
+def import_standards():
+    """从 Excel 导入积分理由库"""
+    if 'file' not in request.files:
+        return jsonify({'error': '未上传文件'}), 400
+    
+    file = request.files['file']
+    if not file or not file.filename:
+        return jsonify({'error': '无效文件'}), 400
+
+    try:
+        wb = load_workbook(file)
+        ws = wb.active
+        
+        standards = []
+        # 跳过表头，从第二行开始
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if not row[0] or not row[2]: continue # 跳过空行
+            standards.append((row[0], row[1], row[2], int(row[3] or 0)))
+
+        if not standards:
+            return jsonify({'error': '文件中没有有效数据'}), 400
+
+        conn = get_db_connection()
+        # 导入通常是增量还是覆盖？这里采用覆盖逻辑，保持与 reset 一致
+        conn.execute('DELETE FROM point_standards')
+        conn.executemany('INSERT INTO point_standards (area, category, name, default_points) VALUES (?, ?, ?, ?)', standards)
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'count': len(standards)})
+    except Exception as e:
+        return jsonify({'error': f"解析文件失败: {str(e)}"}), 500
+
+@app.route('/api/rewards', methods=['GET', 'POST'])
+def handle_rewards():
+    """奖品管理：获取、添加 (支持图片上传)"""
+    conn = get_db_connection()
+    if request.method == 'POST':
+        # 兼容 JSON 和 Form-Data
+        if request.is_json:
+            data = request.json
+            name, desc, pts, stock, is_g, is_s = data['name'], data.get('description',''), data['points_cost'], data.get('stock', 10), data.get('is_grocery', 0), data.get('is_special', 0)
+            img_path = ''
+        else:
+            name = request.form.get('name')
+            desc = request.form.get('description', '')
+            pts = request.form.get('points_cost', 0)
+            stock = request.form.get('stock', 10)
+            is_g = request.form.get('is_grocery', 0)
+            is_s = request.form.get('is_special', 0)
+            img_path = ''
+            if 'image' in request.files:
+                file = request.files['image']
+                if file and file.filename:
+                    fname = secure_filename(f"{int(time.time())}_{file.filename}")
+                    file.save(os.path.join(app.config['UPLOAD_FOLDER'], fname))
+                    img_path = f"/static/uploads/{fname}"
+
+        conn.execute('INSERT INTO rewards (name, description, points_cost, stock, is_grocery, is_special, image_path, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                     (name, desc, int(pts), int(stock), int(is_g), int(is_s), img_path, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    
+    # GET: 支持小铺筛选
+    is_grocery = request.args.get('is_grocery')
+    if is_grocery is not None:
+        try:
+            is_grocery = int(is_grocery)
+        except:
+            is_grocery = 0
+        rows = conn.execute('SELECT * FROM rewards WHERE is_grocery = ? ORDER BY created_at DESC', (is_grocery,)).fetchall()
+    else:
+        rows = conn.execute('SELECT * FROM rewards ORDER BY created_at DESC').fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+@app.route('/api/rewards/<int:rid>', methods=['DELETE'])
+def delete_reward(rid):
+    conn = get_db_connection()
+    conn.execute('DELETE FROM rewards WHERE id = ?', (rid,))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+@app.route('/api/classes/<int:class_id>/stats', methods=['GET'])
+def get_class_stats(class_id):
+    """获取班级统计信息 (支持日期筛选，区分正负分，荣誉榜聚合)"""
+    try:
+        date_str = request.args.get('date')
+        conn = get_db_connection()
+        
+        # 1. 基础汇总
+        res_stats = conn.execute('SELECT AVG(points) as avg, MAX(points) as max, MIN(points) as min, COUNT(*) as count FROM students').fetchone()
+        
+        if not date_str:
+            date_str = datetime.now().strftime('%Y-%m-%d')
+        
+        # 2. 获取加分记录 (荣誉榜)
+        all_plus = conn.execute('''
+            SELECT ph.*, s.name as student_name 
+            FROM points_history ph JOIN students s ON ph.student_id = s.id 
+            WHERE ph.status = 'approved' AND ph.change_amount > 0 AND date(ph.created_at) = ?
+            AND ph.reason NOT LIKE '%兑换%' 
+            AND ph.reason NOT LIKE '%拍卖%' 
+            AND ph.reason NOT LIKE '%悬赏%'
+            AND ph.reason NOT LIKE '%结项%'
+            ORDER BY ph.created_at DESC
+        ''', (date_str,)).fetchall()
+        
+        # --- 荣誉榜聚合逻辑 ---
+        plus_list = []
+        benchmark_groups = {} # key: (reason, created_at) -> {count, reason, time, amount}
+        
+        for p in all_plus:
+            p_dict = dict(p)
+            if p_dict['reason'].startswith('[基本准则]'):
+                key = (p_dict['reason'], p_dict['created_at'])
+                if key not in benchmark_groups:
+                    benchmark_groups[key] = {
+                        'student_name': '全班达标', # 初始占位
+                        'reason': p_dict['reason'],
+                        'change_amount': p_dict['change_amount'],
+                        'created_at': p_dict['created_at'],
+                        'count': 0
+                    }
+                benchmark_groups[key]['count'] += 1
+            else:
+                plus_list.append(p_dict)
+        
+        # 将聚合后的基本准则加入列表
+        for g in benchmark_groups.values():
+            g['student_name'] = f"达标 {g['count']} 人"
+            plus_list.append(g)
+        
+        # 重新按时间排序
+        plus_list.sort(key=lambda x: x['created_at'], reverse=True)
+
+        # 3. 获取减分记录 (违纪榜 - 保持明细展示)
+        minus = conn.execute('''
+            SELECT ph.*, s.name as student_name 
+            FROM points_history ph JOIN students s ON ph.student_id = s.id 
+            WHERE ph.status = 'approved' AND ph.change_amount < 0 AND date(ph.created_at) = ?
+            AND ph.reason NOT LIKE '%兑换%' 
+            AND ph.reason NOT LIKE '%拍卖%' 
+            AND ph.reason NOT LIKE '%悬赏%'
+            AND ph.reason NOT LIKE '%结项%'
+            ORDER BY ph.created_at DESC
+        ''', (date_str,)).fetchall()
+        
+        class_info = conn.execute('SELECT * FROM system_config LIMIT 1').fetchone()
+        conn.close()
+        
+        return jsonify({
+            'class_info': dict(class_info) if class_info else {'name': '未设置'},
+            'total_students': res_stats['count'],
+            'avg_points': round(res_stats['avg'] or 0, 1),
+            'max_points': res_stats['max'] or 0,
+            'min_points': res_stats['min'] or 0,
+            'plus_changes': plus_list,
+            'minus_changes': [dict(r) for r in minus]
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/system/stats', methods=['GET'])
+def get_system_stats():
+    return get_class_stats(1)
+
+@app.route('/api/ranking', methods=['GET'])
+def get_ranking_api():
+    """获取单班级排行榜 (优化版 SQL)"""
+    try:
+        rtype = request.args.get('type', 'student')
+        start = request.args.get('start_date')
+        end = request.args.get('end_date')
+        
+        conn = get_db_connection()
+        date_filter = ""
+        params = []
+        if start and end:
+            date_filter = " AND date(ph.created_at) BETWEEN ? AND ?"
+            params = [start, end]
+
+        if rtype == 'student':
+            if date_filter:
+                sql = f'''
+                    SELECT s.id, s.name, s.student_id, g.name as group_name,
+                           COALESCE(SUM(ph.change_amount), 0) as points
+                    FROM students s
+                    LEFT JOIN groups g ON s.group_id = g.id
+                    LEFT JOIN points_history ph ON s.id = ph.student_id AND ph.status = 'approved' {date_filter}
+                    GROUP BY s.id ORDER BY points DESC, s.name ASC
+                '''
+            else:
+                sql = '''
+                    SELECT id, name, student_id, points, 
+                           (SELECT name FROM groups WHERE id = students.group_id) as group_name
+                    FROM students 
+                    ORDER BY points DESC, name ASC
+                '''
+        else: # 小组榜
+            if date_filter:
+                sql = f'''
+                    SELECT g.id, g.name, g.color,
+                           COALESCE(SUM(ph.change_amount), 0) as points
+                    FROM groups g
+                    LEFT JOIN students s ON g.id = s.group_id
+                    LEFT JOIN points_history ph ON s.id = ph.student_id AND ph.status = 'approved' {date_filter}
+                    GROUP BY g.id ORDER BY points DESC, g.name ASC
+                '''
+            else:
+                sql = '''
+                    SELECT id, name, color,
+                           (SELECT SUM(points) FROM students WHERE group_id = groups.id) as points
+                    FROM groups 
+                    ORDER BY points DESC, name ASC
+                '''
+        
+        rows = conn.execute(sql, params).fetchall()
+        conn.close()
+        return jsonify([dict(r) for r in rows])
+    except Exception as e:
+        import traceback
+        traceback.print_exc() # 打印报错到黑窗口
+        return jsonify({'error': str(e)}), 500
+
+# ============ 互动管理 API (拍卖、悬赏) ============
+
+@app.route('/api/auction/start', methods=['POST'])
+def start_auction():
+    data = request.json
+    conn = get_db_connection()
+    # 取消旧拍卖，开启新拍卖
+    conn.execute('UPDATE auctions SET status = "cancelled" WHERE status = "active"')
+    conn.execute('INSERT INTO auctions (reward_id, class_id, current_price, status) VALUES (?, 1, ?, "active")',
+                 (data['reward_id'], data.get('start_price', 0)))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+@app.route('/api/auction/current', methods=['GET'])
+def get_current_auction():
+    try:
+        conn = get_db_connection()
+        # 关联奖励表、学生表、班级配置
+        row = conn.execute('''
+            SELECT a.*, r.name as reward_name, r.image_path, r.description,
+                   s.name as bidder_name,
+                   (SELECT class_name FROM system_config LIMIT 1) as class_name
+            FROM auctions a 
+            JOIN rewards r ON a.reward_id = r.id
+            LEFT JOIN students s ON a.highest_bidder_id = s.id
+            WHERE a.status = "active" 
+            ORDER BY a.created_at DESC LIMIT 1
+        ''').fetchone()
+        conn.close()
+        return jsonify(dict(row) if row else None)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/auction/bid', methods=['POST'])
+def place_bid():
+    data = request.json
+    conn = get_db_connection()
+    auc = conn.execute('SELECT * FROM auctions WHERE id = ? AND status = "active"', (data['auction_id'],)).fetchone()
+    if not auc or data['amount'] <= auc['current_price']:
+        return jsonify({'error': '竞价已失效或出价过低'}), 400
+    
+    conn.execute('UPDATE auctions SET current_price = ?, highest_bidder_id = ? WHERE id = ?',
+                 (data['amount'], data['student_id'], data['auction_id']))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+@app.route('/api/auction/finish', methods=['POST'])
+def finish_auction():
+    data = request.json
+    conn = get_db_connection()
+    auc = conn.execute('SELECT a.*, r.name as rname FROM auctions a JOIN rewards r ON a.reward_id = r.id WHERE a.id = ?', (data['auction_id'],)).fetchone()
+    if auc and auc['highest_bidder_id']:
+        # 扣除积分
+        conn.execute('UPDATE students SET points = points - ? WHERE id = ?', (auc['current_price'], auc['highest_bidder_id']))
+        # 记录历史
+        conn.execute('INSERT INTO points_history (student_id, change_amount, reason, teacher) VALUES (?, ?, ?, "拍卖系统")',
+                     (auc['highest_bidder_id'], -auc['current_price'], f"拍卖得标: {auc['rname']}"))
+    
+    conn.execute('UPDATE auctions SET status = "finished", finished_at = ? WHERE id = ?',
+                 (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), data['auction_id']))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+@app.route('/api/bounty/start', methods=['POST'])
+def start_bounty():
+    """开启悬赏 (补全字段)"""
+    try:
+        data = request.json
+        conn = get_db_connection()
+        conn.execute('''
+            INSERT INTO bounties (
+                reward_id, class_id, target_points, type, description, 
+                allowed_reasons, start_date, end_date, status
+            ) VALUES (?, 1, ?, ?, ?, ?, ?, ?, "active")
+        ''', (
+            data['reward_id'], data['target_points'], data.get('type', 'individual'),
+            data.get('description', ''), data.get('allowed_reasons', ''),
+            data.get('start_date'), data.get('end_date')
+        ))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/bounties/progress')
+def get_bounties_progress():
+    """获取悬赏进度 (精准规则匹配版)"""
+    try:
+        conn = get_db_connection()
+        today = datetime.now().strftime('%Y-%m-%d')
+        # 1. 查找活跃悬赏
+        rows = conn.execute('''
+            SELECT b.*, r.name as reward_name, r.points_cost as reward_prize, r.stock 
+            FROM bounties b 
+            JOIN rewards r ON b.reward_id = r.id 
+            WHERE b.status = "active" AND (b.end_date IS NULL OR date(b.end_date) >= ?)
+        ''', (today,)).fetchall()
+        
+        res = []
+        for b in rows:
+            # 理由过滤条件
+            reasons = b['allowed_reasons'].split(',') if b['allowed_reasons'] else []
+            reason_filter = ""
+            params = []
+            if reasons:
+                placeholders = ','.join(['?'] * len(reasons))
+                reason_filter = f" AND reason IN ({placeholders})"
+                params = reasons
+            
+            if b['type'] == 'group':
+                # 小组：在该悬赏规则下的累计加分 (取前三)
+                sql = f'''
+                    SELECT g.id, g.name, SUM(ph.change_amount) as current_points
+                    FROM groups g
+                    JOIN students s ON g.id = s.group_id
+                    JOIN points_history ph ON s.id = ph.student_id
+                    WHERE ph.status = 'approved' AND ph.change_amount > 0 {reason_filter}
+                    GROUP BY g.id ORDER BY current_points DESC LIMIT 3
+                '''
+                leader_rows = conn.execute(sql, params).fetchall()
+            else:
+                # 个人：在该悬赏规则下的累计加分 (取前三)
+                sql = f'''
+                    SELECT s.id, s.name, SUM(ph.change_amount) as current_points
+                    FROM students s
+                    JOIN points_history ph ON s.id = ph.student_id
+                    WHERE ph.status = 'approved' AND ph.change_amount > 0 {reason_filter}
+                    GROUP BY s.id ORDER BY current_points DESC LIMIT 3
+                '''
+                leader_rows = conn.execute(sql, params).fetchall()
+
+            res.append({
+                'id': b['id'],
+                'reward_name': b['reward_name'],
+                'reward_prize': b['reward_prize'],
+                'target_points': b['target_points'],
+                'type': b['type'],
+                'stock': b['stock'],
+                'leaders': [
+                    {'id': r['id'], 'name': r['name'], 'points': r['current_points']} 
+                    for r in leader_rows
+                ]
+            })
+        conn.close()
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/bounty/preview_finish', methods=['POST'])
+def preview_bounty_finish():
+    """预览结项扣分方案"""
+    data = request.json
+    bid = data.get('bounty_id')
+    leader_id = data.get('leader_id')
+    try:
+        conn = get_db_connection()
+        b = conn.execute('SELECT b.*, r.points_cost, r.name as rname FROM bounties b JOIN rewards r ON b.reward_id = r.id WHERE b.id = ?', (bid,)).fetchone()
+        if not b: return jsonify({'error': '悬赏不存在'}), 404
+
+        plan = []
+        total_pts = b['points_cost']
+        if b['type'] == 'group':
+            members = conn.execute('SELECT id, name, points FROM students WHERE group_id = ? ORDER BY points DESC, name ASC', (leader_id,)).fetchall()
+            if not members: return jsonify({'error': '该小组无成员'}), 400
+            
+            n = len(members)
+            base = total_pts // n
+            extra = total_pts % n
+            
+            for i, m in enumerate(members):
+                deduct = base + (1 if i < extra else 0)
+                plan.append({'student_id': m['id'], 'name': m['name'], 'current': m['points'], 'deduct': deduct})
+        else:
+            m = conn.execute('SELECT id, name, points FROM students WHERE id = ?', (leader_id,)).fetchone()
+            plan.append({'student_id': m['id'], 'name': m['name'], 'current': m['points'], 'deduct': total_pts})
+            
+        conn.close()
+        return jsonify({'reward_name': b['rname'], 'plan': plan, 'total': total_pts})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/bounty/finish', methods=['POST'])
+def finish_bounty():
+    """执行结项：按方案扣分"""
+    data = request.json
+    bid = data.get('bounty_id')
+    plan = data.get('plan', []) # 前端确认后的扣分方案
+    
+    try:
+        conn = get_db_connection()
+        b = conn.execute('SELECT * FROM bounties WHERE id = ?', (bid,)).fetchone()
+        
+        # 1. 严格按方案执行扣分
+        for item in plan:
+            conn.execute('UPDATE students SET points = points - ? WHERE id = ?', (item['deduct'], item['student_id']))
+            conn.execute('INSERT INTO points_history (student_id, change_amount, reason, teacher) VALUES (?, ?, ?, "悬赏结项")',
+                         (item['student_id'], -item['deduct'], f"达成悬赏: {data.get('reward_name')}"))
+
+        # 2. 扣除奖品库存
+        conn.execute('UPDATE rewards SET stock = stock - 1 WHERE id = ?', (b['reward_id'],))
+        
+        # 3. 标记悬赏状态
+        conn.execute('UPDATE bounties SET status = "finished", winner_id = ?, finished_at = ? WHERE id = ?',
+                     (data.get('leader_id'), datetime.now().strftime('%Y-%m-%d %H:%M:%S'), bid))
+        
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/events/recent')
+def get_events_recent():
+    """获取最近荣誉动态 (支持日期筛选)"""
+    try:
+        date_str = request.args.get('date')
+        conn = get_db_connection()
+        
+        date_filter = ""
+        params = []
+        if date_str:
+            date_filter = " AND date(ph.created_at) = ?"
+            params = [date_str]
+
+        # 筛选逻辑：负分变动 且 包含特定关键词
+        rows = conn.execute(f'''
+            SELECT ph.reason as reward_name, s.name as winner_name, 
+                   ph.created_at as time,
+                   CASE 
+                     WHEN ph.reason LIKE '拍卖%' THEN 'auction'
+                     WHEN ph.reason LIKE '达成悬赏%' THEN 'bounty'
+                     ELSE 'reward'
+                   END as type
+            FROM points_history ph
+            JOIN students s ON ph.student_id = s.id
+            WHERE ph.change_amount < 0 
+            AND (ph.reason LIKE '拍卖%' OR ph.reason LIKE '达成悬赏%' OR ph.reason LIKE '兑换%')
+            {date_filter}
+            ORDER BY ph.created_at DESC LIMIT 20
+        ''', params).fetchall()
+        conn.close()
+        return jsonify([dict(r) for r in rows])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# --- 5. 积分与审核 ---
+
+@app.route('/api/audit/submit', methods=['POST'])
+def submit_audit():
+    try:
+        data = request.json
+        conn = get_db_connection()
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        change_amount = int(data.get('change_amount', 0))
+        submitted_ids = set(data.get('student_ids', []))
+        reason = data.get('reason', '自助申报')
+        submitter = data.get('submitter', '自助')
+        
+        # 核心判断：是否触发“基本准则”逻辑 (负分 且 属于学业/班级管理)
+        is_benchmark_rule = change_amount < 0 and ('[学业管理' in reason or '[班级管理' in reason)
+
+        if is_benchmark_rule:
+            # === 模式 A：基本准则管理 (自动生效，无需审核) ===
+            # 1. 扣分部分：仅针对名单内的人
+            if submitted_ids:
+                neg_records = []
+                for sid in submitted_ids:
+                    # 状态直接为 approved
+                    neg_records.append((sid, change_amount, reason, submitter, "approved", now))
+                    # 实时扣分
+                    conn.execute('UPDATE students SET points = points + ? WHERE id = ?', (change_amount, sid))
+                conn.executemany('INSERT INTO points_history (student_id, change_amount, reason, teacher, status, created_at) VALUES (?, ?, ?, ?, ?, ?)', neg_records)
+
+            # 2. 奖励部分：全班 - 扣分名单 = 达标名单
+            all_students = conn.execute('SELECT id FROM students').fetchall()
+            all_ids = {s['id'] for s in all_students}
+            bonus_ids = all_ids - submitted_ids
+            
+            if bonus_ids:
+                try:
+                    simple_reason = reason.split('] ')[-1]
+                except:
+                    simple_reason = "日常规范"
+                bonus_reason = f"[基本准则] {simple_reason} - 达标奖励"
+                
+                bonus_records = []
+                for bid in bonus_ids:
+                    # 状态直接为 approved
+                    bonus_records.append((bid, 2, bonus_reason, f"系统({submitter})", "approved", now))
+                    # 实时加分
+                    conn.execute('UPDATE students SET points = points + 2 WHERE id = ?', (bid,))
+                conn.executemany('INSERT INTO points_history (student_id, change_amount, reason, teacher, status, created_at) VALUES (?, ?, ?, ?, ?, ?)', bonus_records)
+
+        else:
+            # === 模式 B：普通加减分 (荣誉/自定义等) ===
+            # 仅针对选中的人，不触发全员逻辑
+            if not submitted_ids:
+                return jsonify({'error': '未选择学生'}), 400
+                
+            records = []
+            for sid in submitted_ids:
+                records.append((sid, change_amount, reason, submitter, "pending", now))
+            conn.executemany('INSERT INTO points_history (student_id, change_amount, reason, teacher, status, created_at) VALUES (?, ?, ?, ?, ?, ?)', records)
+
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/audit/pending')
+def get_pending():
+    conn = get_db_connection()
+    rows = conn.execute('SELECT ph.*, s.name as student_name FROM points_history ph JOIN students s ON ph.student_id = s.id WHERE ph.status = "pending"').fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+@app.route('/api/audit/process', methods=['POST'])
+def process_audit():
+    data = request.json
+    conn = get_db_connection()
+    for aid in data['audit_ids']:
+        if data['action'] == 'approve':
+            record = conn.execute('SELECT * FROM points_history WHERE id = ?', (aid,)).fetchone()
+            conn.execute('UPDATE students SET points = points + ? WHERE id = ?', (record['change_amount'], record['student_id']))
+            conn.execute('UPDATE points_history SET status = "approved" WHERE id = ?', (aid,))
+        else:
+            conn.execute('UPDATE points_history SET status = "rejected" WHERE id = ?', (aid,))
+    conn.commit()
+    return jsonify({'success': True})
+
+# --- 5. 权限与路由 ---
 
 @app.before_request
 def check_auth():
-    """全局登录检查"""
-    # 开放学生端及基础资源
-    allowed_paths = [
-        '/login', 
-        '/static', 
-        '/api/verify_password', 
-        '/student_portal', 
-        '/api/audit/submit',
-        '/api/classes',
-        '/api/groups',
-        '/api/tunnel/status', # 开放状态查询
-        '/api/tunnel/action'  # 开放动作（方便登录前开启）
-    ]
-    if any(request.path.startswith(path) for path in allowed_paths):
-        return
-    if 'logged_in' not in session:
-        return redirect(url_for('login_page'))
+    # 终极简化版白名单 (加入排行榜、学生、小组、申报、彩蛋等接口)
+    allowed = ['/login', '/static', '/student_portal', '/grocery_shop', '/auction', '/bounties', '/author',
+               '/api/system/info', '/api/system/setup', '/api/students', '/api/groups', 
+               '/api/point_standards', '/api/audit/submit', '/api/rewards', '/api/tunnel',
+               '/api/auction/current', '/api/bounties/progress', '/api/events/recent', '/api/ranking']
+    if any(request.path.startswith(p) for p in allowed): return
+    if 'logged_in' not in session: return redirect(url_for('login'))
 
-@app.route('/login', methods=['GET', 'POST'])
-def login_page():
-    """登录页面及处理"""
-    if request.method == 'POST':
-        data = request.json
-        input_pwd = str(data.get('password', '')).strip()
-        if input_pwd == get_system_password():
-            session['logged_in'] = True
-            return jsonify({'success': True})
-        return jsonify({'success': False, 'error': '密码错误'}), 403
-    return render_template('login.html')
+@app.route('/')
+def index(): return render_template('index.html')
+
+@app.route('/student_portal')
+def student_portal(): return render_template('student_portal.html')
+
+@app.route('/grocery_shop')
+def grocery_shop(): return render_template('grocery_shop.html')
+
+@app.route('/author')
+def egg_page(): return render_template('egg.html')
+
+# --- 管理端页面路由 ---
+@app.route('/students')
+def students_page(): return render_template('students.html')
+
+@app.route('/points')
+def points_page(): return render_template('points.html')
+
+@app.route('/ranking')
+def ranking_page(): return render_template('ranking.html')
+
+@app.route('/auction')
+def auction_page(): return render_template('auction.html')
+
+@app.route('/random')
+def random_page(): return render_template('random.html')
+
+@app.route('/favicon.ico')
+def favicon(): return send_from_directory(os.path.join(app.root_path, 'static'), 'favicon.ico', mimetype='image/vnd.microsoft.icon')
+
+def get_system_password():
+    """从本地文件读取系统密码"""
+    pwd_file = os.path.join(Config.BASE_DIR, 'password.txt')
+    if not os.path.exists(pwd_file):
+        with open(pwd_file, 'w', encoding='utf-8') as f: f.write('123456')
+        return '123456'
+    with open(pwd_file, 'r', encoding='utf-8') as f: return f.read().strip()
+
+@app.route('/api/students/<int:sid>/history', methods=['GET'])
+def get_student_history(sid):
+    """获取单个学生的积分明细"""
+    try:
+        conn = get_db_connection()
+        # 1. 获取基本信息和排名
+        all_students = conn.execute('SELECT id, points FROM students ORDER BY points DESC, name ASC').fetchall()
+        rank = -1
+        points = 0
+        for i, s in enumerate(all_students):
+            if s['id'] == sid:
+                rank = i + 1
+                points = s['points']
+                break
+        
+        # 2. 获取最近 20 条历史
+        history = conn.execute('''
+            SELECT ph.* FROM points_history ph 
+            WHERE ph.student_id = ? AND ph.status = 'approved'
+            ORDER BY ph.created_at DESC LIMIT 20
+        ''', (sid,)).fetchall()
+        
+        conn.close()
+        return jsonify({
+            'points': points,
+            'rank': rank,
+            'history': [dict(h) for h in history]
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/verify_password', methods=['POST'])
+def verify_password_api():
+    data = request.json
+    if str(data.get('password')) == get_system_password():
+        return jsonify({'success': True})
+    return jsonify({'success': False}), 403
 
 @app.route('/logout')
 def logout():
     session.pop('logged_in', None)
-    return redirect(url_for('login_page'))
+    return redirect(url_for('login'))
 
-@app.route('/api/verify_password', methods=['POST'])
-def verify_password_api():
-    """专门供AJAX调用的验证接口"""
-    data = request.json
-    input_pwd = str(data.get('password', '')).strip()
-    if input_pwd == get_system_password():
-        return jsonify({'success': True})
-    return jsonify({'success': False, 'error': '密码错误'}), 403
-
-# 数据库初始化
-def init_db():
-    """初始化数据库"""
-    try:
-        # 确保data目录存在
-        data_dir = os.path.join(os.path.dirname(__file__), 'data')
-        os.makedirs(data_dir, exist_ok=True)
-        print(f"数据库文件将保存在: {app.config['DATABASE_PATH']}")
-        
-        conn = sqlite3.connect(app.config['DATABASE_PATH'])
-        cursor = conn.cursor()
-        
-        # 创建班级表
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS classes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL UNIQUE,
-            teacher TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        ''')
-        
-        # 创建分组表
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS groups (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            class_id INTEGER NOT NULL,
-            name TEXT NOT NULL,
-            color TEXT DEFAULT '#667eea',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (class_id) REFERENCES classes (id),
-            UNIQUE(class_id, name)
-        )
-        ''')
-        
-        # 创建学生表
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS students (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            class_id INTEGER,
-            group_id INTEGER,
-            name TEXT NOT NULL,
-            student_id TEXT NOT NULL UNIQUE,
-            points INTEGER DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (class_id) REFERENCES classes (id),
-            FOREIGN KEY (group_id) REFERENCES groups (id)
-        )
-        ''')
-        
-        # 创建积分历史表
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS points_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            student_id INTEGER,
-            change_amount INTEGER NOT NULL,
-            reason TEXT,
-            teacher TEXT,
-            status TEXT DEFAULT 'approved',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (student_id) REFERENCES students (id)
-        )
-        ''')
-        
-        # 创建分组积分历史表
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS group_points_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            group_id INTEGER,
-            change_amount INTEGER NOT NULL,
-            reason TEXT,
-            teacher TEXT,
-            status TEXT DEFAULT 'approved',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (group_id) REFERENCES groups (id)
-        )
-        ''')
-
-        # 创建奖品表
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS rewards (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            description TEXT,
-            points_cost INTEGER NOT NULL,
-            image_path TEXT,
-            stock INTEGER DEFAULT 10,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        ''')
-
-        # 创建兑换记录表
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS redemptions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            student_id INTEGER NOT NULL,
-            reward_id INTEGER NOT NULL,
-            redeemed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (student_id) REFERENCES students (id),
-            FOREIGN KEY (reward_id) REFERENCES rewards (id)
-        )
-        ''')
-
-        # 创建小组兑换记录表
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS group_redemptions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            group_id INTEGER NOT NULL,
-            reward_id INTEGER NOT NULL,
-            redeemed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (group_id) REFERENCES groups (id),
-            FOREIGN KEY (reward_id) REFERENCES rewards (id)
-        )
-        ''')
-
-        # 创建家校评价表
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS student_evaluations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            student_id INTEGER NOT NULL,
-            content TEXT,
-            period TEXT,
-            tag TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (student_id) REFERENCES students (id)
-        )
-        ''')
-        
-        conn.commit()
-        print("数据库表创建成功")
-        
-        # 检查表是否真的创建了
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        tables = cursor.fetchall()
-        print(f"数据库中的表: {[t[0] for t in tables]}")
-        
-        conn.close()
-        
-    except Exception as e:
-        print(f"初始化数据库失败: {e}")
-        return False, str(e)
-    
-    return True, "数据库初始化成功"
-
-def get_db_connection():
-    """获取数据库连接"""
-    # 先检查数据库文件是否存在
-    if not os.path.exists(app.config['DATABASE_PATH']):
-        print(f"数据库文件不存在，重新初始化: {app.config['DATABASE_PATH']}")
-        init_db()
-    
-    conn = sqlite3.connect(app.config['DATABASE_PATH'])
-    conn.row_factory = sqlite3.Row  # 返回字典格式
-    return conn
-
-def check_and_init_tables():
-    """检查并初始化所有表"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # 检查所有必需的表是否存在
-        required_tables = ['classes', 'groups', 'students', 'points_history', 'group_points_history', 'group_redemptions']
-        existing_tables = []
-        
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        tables = cursor.fetchall()
-        existing_tables = [t[0] for t in tables]
-        
-        print(f"现有表: {existing_tables}")
-        print(f"必需表: {required_tables}")
-        
-        missing_tables = [t for t in required_tables if t not in existing_tables]
-        
-        if missing_tables:
-            print(f"缺少的表: {missing_tables}")
-            conn.close()
-            # 重新初始化数据库
-            success, message = init_db()
-            if not success:
-                print(f"重新初始化失败: {message}")
-                return False
-        else:
-            print("所有必需表都存在")
-            
-            # 数据库迁移检查：尝试添加 tag 字段
-            try:
-                conn.execute("ALTER TABLE student_evaluations ADD COLUMN tag TEXT")
-                print("已为 student_evaluations 表添加 tag 字段")
-                conn.commit()
-            except sqlite3.OperationalError:
-                # 字段已存在，忽略错误
-                pass
-                
-            try:
-                conn.execute("ALTER TABLE points_history ADD COLUMN status TEXT DEFAULT 'approved'")
-                conn.execute("ALTER TABLE group_points_history ADD COLUMN status TEXT DEFAULT 'approved'")
-                print("已为积分历史表添加 status 字段")
-                conn.commit()
-            except sqlite3.OperationalError:
-                pass
-        
-        conn.close()
-        return True
-        
-    except Exception as e:
-        print(f"检查表时出错: {e}")
-        return False
-
-# ============ 基础API路由 ============
-
-@app.route('/')
-def index():
-    """首页"""
-    return render_template('index.html')
-
-@app.route('/student_portal')
-def student_portal_page():
-    """学生自管入口页面"""
-    return render_template('student_portal.html')
-
-@app.route('/api/audit/submit', methods=['POST'])
-def submit_audit():
-    """提交积分申请（不立即生效）"""
-    try:
-        check_and_init_tables()
-        data = request.json
-        # 兼容单人和批量
-        student_ids = data.get('student_ids', [])
-        if not student_ids and data.get('student_id'):
-            student_ids = [data.get('student_id')]
-            
-        change_amount = int(data.get('change_amount', 0))
-        reason = data.get('reason', '')
-        submitter = data.get('submitter', '学生申报') # 提交人（如：卫生委员）
-        
-        if not student_ids or change_amount == 0:
-            return jsonify({'error': '无效的申请数据'}), 400
-            
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        for sid in student_ids:
-            # 插入记录，状态为 pending，注意 created_at 使用本地时间
-            cursor.execute('''
-                INSERT INTO points_history 
-                (student_id, change_amount, reason, teacher, status, created_at) 
-                VALUES (?, ?, ?, ?, 'pending', ?)
-            ''', (sid, change_amount, reason, submitter, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-            
-        conn.commit()
-        conn.close()
-        return jsonify({'success': True, 'count': len(student_ids)})
-        
-    except Exception as e:
-        print(f"提交申请失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/audit/pending', methods=['GET'])
-def get_pending_audits():
-    """获取待审核列表"""
-    try:
-        conn = get_db_connection()
-        # 关联学生信息
-        sql = '''
-            SELECT ph.*, s.name as student_name, s.student_id as student_code, g.name as group_name
-            FROM points_history ph
-            JOIN students s ON ph.student_id = s.id
-            LEFT JOIN groups g ON s.group_id = g.id
-            WHERE ph.status = 'pending'
-            ORDER BY ph.created_at DESC
-        '''
-        audits = conn.execute(sql).fetchall()
-        conn.close()
-        return jsonify([dict(a) for a in audits])
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/audit/process', methods=['POST'])
-def process_audit():
-    """处理审核（通过或拒绝）"""
-    try:
-        data = request.json
-        audit_ids = data.get('audit_ids', []) # 支持批量处理
-        action = data.get('action') # 'approve' or 'reject'
-        
-        if not audit_ids or action not in ['approve', 'reject']:
-            return jsonify({'error': '参数错误'}), 400
-            
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        if action == 'approve':
-            # 1. 更新历史记录状态
-            placeholders = ','.join(['?'] * len(audit_ids))
-            cursor.execute(f"UPDATE points_history SET status = 'approved' WHERE id IN ({placeholders})", audit_ids)
-            
-            # 2. 真正把分加到学生身上
-            for aid in audit_ids:
-                record = conn.execute("SELECT student_id, change_amount FROM points_history WHERE id = ?", (aid,)).fetchone()
-                if record:
-                    cursor.execute(
-                        "UPDATE students SET points = points + ? WHERE id = ?",
-                        (record['change_amount'], record['student_id'])
-                    )
-                    
-        else: # reject
-            # 拒绝则直接标记为 rejected
-            placeholders = ','.join(['?'] * len(audit_ids))
-            cursor.execute(f"UPDATE points_history SET status = 'rejected' WHERE id IN ({placeholders})", audit_ids)
-            
-        conn.commit()
-        conn.close()
-        return jsonify({'success': True})
-        
-    except Exception as e:
-        print(f"审核处理失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/random')
-def random_page():
-    """随机点名页面"""
-    return render_template('random.html')
-
-@app.route('/report')
-def report_page():
-    """家校合作/报告页面"""
-    return render_template('report.html')
-
-@app.route('/api/students/<int:student_id>/evaluation', methods=['GET', 'POST'])
-def handle_evaluation(student_id):
-    """获取或保存学生评价"""
-    conn = get_db_connection()
+@app.route('/login', methods=['GET', 'POST'])
+def login():
     if request.method == 'POST':
-        data = request.json
-        content = data.get('content')
-        period = data.get('period', datetime.now().strftime('%Y-%m-%d'))
-        tag = data.get('tag', '日常寄语')
-        
-        conn.execute('''
-            INSERT INTO student_evaluations (student_id, content, period, tag)
-            VALUES (?, ?, ?, ?)
-        ''', (student_id, content, period, tag))
-        conn.commit()
-        conn.close()
-        return jsonify({'success': True})
-    
-    # GET (支持筛选)
-    start_date = request.args.get('start_date')
-    end_date = request.args.get('end_date')
-    tag = request.args.get('tag')
-    
-    query = 'SELECT * FROM student_evaluations WHERE student_id = ?'
-    params = [student_id]
-    
-    if start_date:
-        query += ' AND date(period) >= ?'
-        params.append(start_date)
-    if end_date:
-        query += ' AND date(period) <= ?'
-        params.append(end_date)
-    if tag:
-        query += ' AND tag = ?'
-        params.append(tag)
-        
-    query += ' ORDER BY created_at DESC'
-    
-    evals = conn.execute(query, params).fetchall()
-    conn.close()
-    return jsonify([dict(e) for e in evals])
-
-@app.route('/api/students/<int:student_id>/stats_detail', methods=['GET'])
-def get_student_stats_detail(student_id):
-    """获取学生详细积分统计（用于档案卡）"""
-    try:
-        check_and_init_tables()
-        conn = get_db_connection()
-        
-        start_date = request.args.get('start_date')
-        end_date = request.args.get('end_date')
-        
-        date_filter = ""
-        params = [student_id]
-        
-        if start_date:
-            date_filter += " AND date(created_at) >= ?"
-            params.append(start_date)
-        if end_date:
-            date_filter += " AND date(created_at) <= ?"
-            params.append(end_date)
-            
-        # 1. 获取积分构成（按理由）
-        sql = f'''
-            SELECT reason, SUM(change_amount) as total_change, COUNT(*) as count
-            FROM points_history
-            WHERE student_id = ? {date_filter}
-            GROUP BY reason
-            ORDER BY total_change DESC
-        '''
-        details = conn.execute(sql, params).fetchall()
-        
-        # 2. 获取该时间段总分变化
-        sum_sql = f'''
-            SELECT SUM(change_amount) as total
-            FROM points_history
-            WHERE student_id = ? {date_filter}
-        '''
-        total = conn.execute(sum_sql, params).fetchone()['total'] or 0
-        
-        conn.close()
-        return jsonify({
-            'details': [dict(d) for d in details],
-            'period_total': total
-        })
-    except Exception as e:
-        print(f"获取统计详情失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/classes/<int:class_id>/export_report')
-def export_class_report(class_id):
-    """导出班级周报Excel"""
-    conn = get_db_connection()
-    students = conn.execute('''
-        SELECT s.name, s.student_id, s.points, g.name as group_name,
-               (SELECT content FROM student_evaluations WHERE student_id = s.id ORDER BY created_at DESC LIMIT 1) as last_eval
-        FROM students s
-        LEFT JOIN groups g ON s.group_id = g.id
-        WHERE s.class_id = ?
-        ORDER BY s.points DESC
-    ''', (class_id,)).fetchall()
-    
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "班级学情报告"
-    
-    # 表头
-    headers = ["排名", "姓名", "学号", "所属小组", "当前总积分", "老师评价"]
-    ws.append(headers)
-    
-    for i, s in enumerate(students):
-        ws.append([i+1, s['name'], s['student_id'], s['group_name'] or "-", s['points'], s['last_eval'] or "暂无评价"])
-    
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
-    conn.close()
-    
-    filename = f"class_report_{datetime.now().strftime('%Y%m%d')}.xlsx"
-    return send_file(output, as_attachment=True, download_name=filename)
-
-@app.route('/api/classes/<int:class_id>', methods=['DELETE'])
-def delete_class(class_id):
-    """彻底删除班级及其所有关联数据"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # 1. 删除关联的评价
-        cursor.execute('DELETE FROM student_evaluations WHERE student_id IN (SELECT id FROM students WHERE class_id = ?)', (class_id,))
-        # 2. 删除关联的积分历史
-        cursor.execute('DELETE FROM points_history WHERE student_id IN (SELECT id FROM students WHERE class_id = ?)', (class_id,))
-        # 3. 删除关联的小组积分历史
-        cursor.execute('DELETE FROM group_points_history WHERE group_id IN (SELECT id FROM groups WHERE class_id = ?)', (class_id,))
-        # 4. 删除兑换记录
-        cursor.execute('DELETE FROM redemptions WHERE student_id IN (SELECT id FROM students WHERE class_id = ?)', (class_id,))
-        cursor.execute('DELETE FROM group_redemptions WHERE group_id IN (SELECT id FROM groups WHERE class_id = ?)', (class_id,))
-        # 5. 删除学生
-        cursor.execute('DELETE FROM students WHERE class_id = ?', (class_id,))
-        # 6. 删除小组
-        cursor.execute('DELETE FROM groups WHERE class_id = ?', (class_id,))
-        # 7. 最后删除班级本身
-        cursor.execute('DELETE FROM classes WHERE id = ?', (class_id,))
-        
-        conn.commit()
-        conn.close()
-        return jsonify({'message': '班级及关联数据已彻底清除'}), 200
-    except Exception as e:
-        print(f"删除班级失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/classes', methods=['GET'])
-def get_classes():
-    """获取所有班级"""
-    try:
-        if not check_and_init_tables():
-            return jsonify({'error': '数据库初始化失败'}), 500
-            
-        conn = get_db_connection()
-        classes = conn.execute('SELECT * FROM classes ORDER BY name').fetchall()
-        conn.close()
-        
-        if not classes:
-            print("数据库中没有班级")
-            return jsonify([])
-        
-        result = []
-        for c in classes:
-            result.append({
-                'id': c['id'],
-                'name': c['name'],
-                'teacher': c['teacher'] if 'teacher' in c.keys() else '',
-                'created_at': c['created_at'] if 'created_at' in c.keys() else ''
-            })
-        
-        print(f"返回 {len(result)} 个班级")
-        return jsonify(result)
-        
-    except Exception as e:
-        print(f"获取班级时发生错误: {e}")
-        return jsonify([])
-
-@app.route('/api/classes', methods=['POST'])
-def create_class():
-    """创建班级"""
-    try:
-        check_and_init_tables()
-        
-        data = request.json
-        name = data.get('name')
-        teacher = data.get('teacher', '')
-        
-        if not name:
-            return jsonify({'error': '班级名称不能为空'}), 400
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute(
-                'INSERT INTO classes (name, teacher) VALUES (?, ?)',
-                (name, teacher)
-            )
-            class_id = cursor.lastrowid
-            conn.commit()
-            
-            return jsonify({'id': class_id, 'name': name, 'teacher': teacher}), 201
-        except sqlite3.IntegrityError:
-            return jsonify({'error': '班级名称已存在'}), 400
-        finally:
-            conn.close()
-    except Exception as e:
-        print(f"创建班级失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/classes/<int:class_id>/students', methods=['GET'])
-def get_students(class_id):
-    """获取班级学生"""
-    try:
-        check_and_init_tables()
-        
-        conn = get_db_connection()
-        students = conn.execute(
-            '''SELECT s.*, g.name as group_name, g.color as group_color 
-               FROM students s 
-               LEFT JOIN groups g ON s.group_id = g.id 
-               WHERE s.class_id = ? 
-               ORDER BY s.name''',
-            (class_id,)
-        ).fetchall()
-        conn.close()
-        
-        return jsonify([dict(s) for s in students])
-    except Exception as e:
-        print(f"获取学生失败: {e}")
-        return jsonify([])
-
-@app.route('/api/students', methods=['POST'])
-def add_student():
-    """添加学生"""
-    try:
-        check_and_init_tables()
-        
-        data = request.json
-        class_id = data.get('class_id')
-        name = data.get('name')
-        student_id = data.get('student_id')
-        group_id = data.get('group_id')
-        
-        if not all([class_id, name, student_id]):
-            return jsonify({'error': '缺少必要参数'}), 400
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute(
-                'INSERT INTO students (class_id, name, student_id, group_id, created_at) VALUES (?, ?, ?, ?, ?)',
-                (class_id, name, student_id, group_id, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-            )
-            new_student_id = cursor.lastrowid
-            conn.commit()
-            
-            return jsonify({
-                'id': new_student_id,
-                'class_id': class_id,
-                'name': name,
-                'student_id': student_id,
-                'group_id': group_id,
-                'points': 0
-            }), 201
-        except sqlite3.IntegrityError:
-            return jsonify({'error': '学号已存在'}), 400
-        finally:
-            conn.close()
-    except Exception as e:
-        print(f"添加学生失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/students/<int:student_id>', methods=['PUT'])
-def update_student(student_id):
-    """更新学生信息"""
-    try:
-        check_and_init_tables()
-        
-        data = request.json
-        name = data.get('name')
-        group_id = data.get('group_id')
-        
-        if not name:
-            return jsonify({'error': '姓名不能为空'}), 400
-        
-        conn = get_db_connection()
-        
-        if group_id is not None:
-            conn.execute(
-                'UPDATE students SET name = ?, group_id = ? WHERE id = ?',
-                (name, group_id, student_id)
-            )
-        else:
-            conn.execute(
-                'UPDATE students SET name = ? WHERE id = ?',
-                (name, student_id)
-            )
-        
-        conn.commit()
-        conn.close()
-        
-        return jsonify({'message': '学生信息更新成功'}), 200
-    except Exception as e:
-        print(f"更新学生失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/students/<int:student_id>', methods=['DELETE'])
-def delete_student(student_id):
-    """删除学生"""
-    try:
-        check_and_init_tables()
-        
-        conn = get_db_connection()
-        conn.execute('DELETE FROM students WHERE id = ?', (student_id,))
-        conn.execute('DELETE FROM points_history WHERE student_id = ?', (student_id,))
-        conn.commit()
-        conn.close()
-        
-        return jsonify({'message': '学生删除成功'}), 200
-    except Exception as e:
-        print(f"删除学生失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/students/<int:student_id>/points', methods=['POST'])
-def update_points(student_id):
-    """更新学生积分"""
-    try:
-        check_and_init_tables()
-        
-        data = request.json
-        change_amount = data.get('change_amount', 0)
-        reason = data.get('reason', '')
-        teacher = data.get('teacher', '系统')
-        
-        if change_amount == 0:
-            return jsonify({'error': '积分变化不能为0'}), 400
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # 检查学生是否存在
-        student = conn.execute(
-            'SELECT id FROM students WHERE id = ?', (student_id,)
-        ).fetchone()
-        
-        if not student:
-            conn.close()
-            return jsonify({'error': '学生不存在'}), 404
-        
-        # 更新学生积分
-        cursor.execute(
-            'UPDATE students SET points = points + ? WHERE id = ?',
-            (change_amount, student_id)
-        )
-        
-        # 记录积分历史
-        cursor.execute(
-            'INSERT INTO points_history (student_id, change_amount, reason, teacher, created_at) VALUES (?, ?, ?, ?, ?)',
-            (student_id, change_amount, reason, teacher, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-        )
-        
-        # 获取更新后的积分
-        updated_student = conn.execute(
-            'SELECT points FROM students WHERE id = ?',
-            (student_id,)
-        ).fetchone()
-        
-        conn.commit()
-        conn.close()
-        
-        return jsonify({
-            'message': '积分更新成功',
-            'new_points': updated_student['points']
-        }), 200
-    except Exception as e:
-        print(f"更新积分失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/students/batch/points', methods=['POST'])
-def batch_update_points():
-    """批量更新学生积分（指定ID列表）"""
-    try:
-        check_and_init_tables()
-        
-        data = request.json
-        student_ids = data.get('student_ids', [])
-        change_amount = data.get('change_amount', 0)
-        reason = data.get('reason', '')
-        teacher = data.get('teacher', '系统')
-        
-        if not student_ids:
-            return jsonify({'error': '未选择学生'}), 400
-            
-        if change_amount == 0:
-            return jsonify({'error': '积分变化不能为0'}), 400
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        success_count = 0
-        
-        # 批量处理
-        for student_id in student_ids:
-            # 检查学生是否存在
-            student = conn.execute(
-                'SELECT id FROM students WHERE id = ?', (student_id,)
-            ).fetchone()
-            
-            if student:
-                # 更新学生积分
-                cursor.execute(
-                    'UPDATE students SET points = points + ? WHERE id = ?',
-                    (change_amount, student_id)
-                )
-                
-                # 记录积分历史
-                cursor.execute(
-                    'INSERT INTO points_history (student_id, change_amount, reason, teacher, created_at) VALUES (?, ?, ?, ?, ?)',
-                    (student_id, change_amount, reason, teacher, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-                )
-                success_count += 1
-        
-        conn.commit()
-        conn.close()
-        
-        return jsonify({
-            'message': f'成功更新 {success_count} 名学生的积分',
-            'success_count': success_count
-        }), 200
-    except Exception as e:
-        print(f"批量更新积分失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/students/<int:student_id>/history', methods=['GET'])
-def get_points_history(student_id):
-    """获取学生积分历史"""
-    try:
-        check_and_init_tables()
-        
-        conn = get_db_connection()
-        history = conn.execute(
-            '''SELECT ph.*, s.name as student_name 
-               FROM points_history ph 
-               JOIN students s ON ph.student_id = s.id 
-               WHERE ph.student_id = ? 
-               ORDER BY ph.created_at DESC''',
-            (student_id,)
-        ).fetchall()
-        conn.close()
-        
-        return jsonify([dict(h) for h in history])
-    except Exception as e:
-        print(f"获取积分历史失败: {e}")
-        return jsonify([])
-
-@app.route('/api/classes/<int:class_id>/ranking', methods=['GET'])
-def get_ranking(class_id):
-    """获取积分排行榜（支持学生/分组，支持日期范围）"""
-    try:
-        check_and_init_tables()
-        
-        ranking_type = request.args.get('type', 'student') # student or group
-        start_date = request.args.get('start_date')
-        end_date = request.args.get('end_date')
-        
-        conn = get_db_connection()
-        
-        # 构建日期筛选条件
-        date_filter = ""
-        params = [class_id]
-        if start_date and end_date:
-            date_filter = "AND date(ph.created_at) BETWEEN ? AND ?"
-            params.extend([start_date, end_date])
-        
-        if ranking_type == 'student':
-            if date_filter:
-                # 按历史记录统计增量
-                sql = f'''
-                    SELECT s.id, s.name, s.student_id, 
-                           COALESCE(SUM(ph.change_amount), 0) as points,
-                           g.name as group_name, g.color as group_color
-                    FROM students s
-                    LEFT JOIN points_history ph ON s.id = ph.student_id
-                    LEFT JOIN groups g ON s.group_id = g.id
-                    WHERE s.class_id = ? {date_filter}
-                    GROUP BY s.id
-                    ORDER BY points DESC, s.name ASC
-                '''
-            else:
-                # 直接查询当前总分
-                sql = '''
-                    SELECT s.id, s.name, s.student_id, s.points,
-                           g.name as group_name, g.color as group_color
-                    FROM students s
-                    LEFT JOIN groups g ON s.group_id = g.id
-                    WHERE s.class_id = ?
-                    ORDER BY s.points DESC, s.name ASC
-                '''
-                params = [class_id] # 重置params
-                
-        else: # type == 'group'
-            if date_filter:
-                # 统计组内学生历史记录总和
-                sql = f'''
-                    SELECT g.id, g.name, g.color,
-                           COALESCE(SUM(ph.change_amount), 0) as points,
-                           COUNT(DISTINCT s.id) as student_count
-                    FROM groups g
-                    LEFT JOIN students s ON g.id = s.group_id
-                    LEFT JOIN points_history ph ON s.id = ph.student_id
-                    WHERE g.class_id = ? {date_filter}
-                    GROUP BY g.id
-                    ORDER BY points DESC, g.name ASC
-                '''
-            else:
-                # 统计当前总分
-                sql = '''
-                    SELECT g.id, g.name, g.color,
-                           COALESCE(SUM(s.points), 0) as points,
-                           COUNT(s.id) as student_count
-                    FROM groups g
-                    LEFT JOIN students s ON g.id = s.group_id
-                    WHERE g.class_id = ?
-                    GROUP BY g.id
-                    ORDER BY points DESC, g.name ASC
-                '''
-                params = [class_id]
-
-        ranking = conn.execute(sql, params).fetchall()
-        conn.close()
-        
-        # 处理排名
-        result = []
-        for i, r in enumerate(ranking):
-            item = dict(r)
-            item['rank'] = i + 1
-            result.append(item)
-            
-        return jsonify(result)
-    except Exception as e:
-        print(f"获取排行榜失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/classes/<int:class_id>/ranking/chart', methods=['GET'])
-def get_ranking_chart(class_id):
-    """获取图表数据"""
-    try:
-        check_and_init_tables()
-        # 这里暂不使用日期筛选，默认展示最近趋势
-        
-        conn = get_db_connection()
-        
-        # 1. 积分分布 (前5名学生)
-        top_students = conn.execute('''
-            SELECT name, points FROM students 
-            WHERE class_id = ? 
-            ORDER BY points DESC LIMIT 5
-        ''', (class_id,)).fetchall()
-        
-        distribution = {
-            'labels': [s['name'] for s in top_students],
-            'data': [s['points'] for s in top_students]
-        }
-        
-        # 2. 积分趋势 (最近7天全班总积分变化)
-        trend_sql = '''
-            SELECT date(ph.created_at) as date, SUM(change_amount) as total_change
-            FROM points_history ph
-            JOIN students s ON ph.student_id = s.id
-            WHERE s.class_id = ?
-            GROUP BY date(ph.created_at)
-            ORDER BY date(ph.created_at) DESC
-            LIMIT 7
-        '''
-        trend_data = conn.execute(trend_sql, (class_id,)).fetchall()
-        
-        # 整理趋势数据（按日期升序）
-        trend_data.reverse()
-        trend = {
-            'labels': [t['date'] for t in trend_data],
-            'data': [t['total_change'] for t in trend_data]
-        }
-        
-        # 3. 分组对比 (Bar Chart) - 各组平均分
-        groups = conn.execute('''
-            SELECT g.name, AVG(s.points) as avg_points
-            FROM groups g
-            LEFT JOIN students s ON g.id = s.group_id
-            WHERE g.class_id = ?
-            GROUP BY g.id
-            ORDER BY avg_points DESC
-        ''', (class_id,)).fetchall()
-        
-        group_comp = {
-            'labels': [g['name'] for g in groups],
-            'data': [round(g['avg_points'] or 0, 1) for g in groups]
-        }
-        
-        conn.close()
-        
-        return jsonify({
-            'distribution': distribution,
-            'trend': trend,
-            'group_comp': group_comp
-        })
-        
-    except Exception as e:
-        print(f"获取图表数据失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-# ============ 分组管理 API ============
-
-@app.route('/api/groups', methods=['GET'])
-def get_groups():
-    """获取所有分组（可筛选班级）"""
-    try:
-        check_and_init_tables()
-        
-        class_id = request.args.get('class_id')
-        
-        conn = get_db_connection()
-        if class_id:
-            groups = conn.execute(
-                '''SELECT g.*, 
-                          COUNT(s.id) as student_count,
-                          SUM(s.points) as total_points,
-                          AVG(s.points) as avg_points
-                   FROM groups g
-                   LEFT JOIN students s ON g.id = s.group_id
-                   WHERE g.class_id = ?
-                   GROUP BY g.id
-                   ORDER BY g.name''',
-                (class_id,)
-            ).fetchall()
-        else:
-            groups = conn.execute(
-                '''SELECT g.*, 
-                          COUNT(s.id) as student_count,
-                          SUM(s.points) as total_points,
-                          AVG(s.points) as avg_points
-                   FROM groups g
-                   LEFT JOIN students s ON g.id = s.group_id
-                   GROUP BY g.id
-                   ORDER BY g.name'''
-            ).fetchall()
-        
-        conn.close()
-        
-        result = []
-        for g in groups:
-            group_dict = dict(g)
-            group_dict['avg_points'] = round(group_dict['avg_points'] or 0, 2)
-            result.append(group_dict)
-        
-        return jsonify(result)
-    except Exception as e:
-        print(f"获取分组失败: {e}")
-        return jsonify([])
-
-@app.route('/api/groups', methods=['POST'])
-def create_group():
-    """创建分组"""
-    try:
-        check_and_init_tables()
-        
-        data = request.json
-        class_id = data.get('class_id')
-        name = data.get('name')
-        color = data.get('color', '#667eea')
-        
-        if not class_id or not name:
-            return jsonify({'error': '缺少必要参数'}), 400
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute(
-                'INSERT INTO groups (class_id, name, color) VALUES (?, ?, ?)',
-                (class_id, name, color)
-            )
-            group_id = cursor.lastrowid
-            
-            conn.commit()
-            conn.close()
-            
-            return jsonify({
-                'id': group_id,
-                'class_id': class_id,
-                'name': name,
-                'color': color,
-                'student_count': 0,
-                'total_points': 0,
-                'avg_points': 0
-            }), 201
-        except sqlite3.IntegrityError:
-            conn.close()
-            return jsonify({'error': '分组名称已存在'}), 400
-    except Exception as e:
-        print(f"创建分组失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/groups/<int:group_id>', methods=['PUT'])
-def update_group(group_id):
-    """更新分组"""
-    try:
-        check_and_init_tables()
-        
-        data = request.json
-        name = data.get('name')
-        color = data.get('color')
-        
-        if not name and not color:
-            return jsonify({'error': '没有要更新的数据'}), 400
-        
-        conn = get_db_connection()
-        if name:
-            conn.execute('UPDATE groups SET name = ? WHERE id = ?', (name, group_id))
-        if color:
-            conn.execute('UPDATE groups SET color = ? WHERE id = ?', (color, group_id))
-        
-        conn.commit()
-        conn.close()
-        return jsonify({'message': '分组更新成功'}), 200
-    except Exception as e:
-        print(f"更新分组失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/groups/<int:group_id>', methods=['DELETE'])
-def delete_group(group_id):
-    """删除分组"""
-    try:
-        check_and_init_tables()
-        
-        conn = get_db_connection()
-        
-        # 将属于该分组的学生设为无分组
-        conn.execute('UPDATE students SET group_id = NULL WHERE group_id = ?', (group_id,))
-        
-        # 删除分组
-        conn.execute('DELETE FROM groups WHERE id = ?', (group_id,))
-        
-        # 删除分组积分历史
-        conn.execute('DELETE FROM group_points_history WHERE group_id = ?', (group_id,))
-        
-        conn.commit()
-        conn.close()
-        return jsonify({'message': '分组删除成功'}), 200
-    except Exception as e:
-        print(f"删除分组失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/groups/<int:group_id>/students', methods=['GET'])
-def get_group_students(group_id):
-    """获取分组内的学生"""
-    try:
-        check_and_init_tables()
-        
-        conn = get_db_connection()
-        students = conn.execute(
-            'SELECT * FROM students WHERE group_id = ? ORDER BY name',
-            (group_id,)
-        ).fetchall()
-        conn.close()
-        return jsonify([dict(s) for s in students])
-    except Exception as e:
-        print(f"获取分组学生失败: {e}")
-        return jsonify([])
-
-@app.route('/api/groups/<int:group_id>/stats', methods=['GET'])
-def get_group_stats(group_id):
-    """获取分组统计信息"""
-    try:
-        check_and_init_tables()
-        
-        conn = get_db_connection()
-        
-        # 分组信息
-        group = conn.execute(
-            'SELECT * FROM groups WHERE id = ?', (group_id,)
-        ).fetchone()
-        
-        if not group:
-            conn.close()
-            return jsonify({'error': '分组不存在'}), 404
-        
-        # 分组学生数
-        student_count = conn.execute(
-            'SELECT COUNT(*) as count FROM students WHERE group_id = ?',
-            (group_id,)
-        ).fetchone()['count']
-        
-        # 分组平均积分
-        avg_points_result = conn.execute(
-            'SELECT AVG(points) as avg FROM students WHERE group_id = ?',
-            (group_id,)
-        ).fetchone()
-        avg_points = avg_points_result['avg'] if avg_points_result['avg'] is not None else 0
-        
-        # 分组总积分
-        total_points_result = conn.execute(
-            'SELECT SUM(points) as total FROM students WHERE group_id = ?',
-            (group_id,)
-        ).fetchone()
-        total_points = total_points_result['total'] if total_points_result['total'] is not None else 0
-        
-        conn.close()
-        
-        return jsonify({
-            'group': dict(group),
-            'student_count': student_count,
-            'avg_points': round(avg_points, 2),
-            'total_points': total_points
-        })
-    except Exception as e:
-        print(f"获取分组统计失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/groups/<int:group_id>/points', methods=['POST'])
-def update_group_points(group_id):
-    """批量更新分组学生积分"""
-    try:
-        check_and_init_tables()
-        
-        data = request.json
-        change_amount = data.get('change_amount', 0)
-        reason = data.get('reason', '')
-        teacher = data.get('teacher', '系统')
-        
-        if change_amount == 0:
-            return jsonify({'error': '积分变化不能为0'}), 400
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # 获取分组内的所有学生
-        students = conn.execute(
-            'SELECT id FROM students WHERE group_id = ?',
-            (group_id,)
-        ).fetchall()
-        
-        if not students:
-            conn.close()
-            return jsonify({'error': '分组内没有学生'}), 400
-        
-        updated_count = 0
-        for student in students:
-            student_id = student['id']
-            
-            # 更新学生积分
-            cursor.execute(
-                'UPDATE students SET points = points + ? WHERE id = ?',
-                (change_amount, student_id)
-            )
-            
-            # 记录个人积分历史
-            cursor.execute(
-                '''INSERT INTO points_history 
-                   (student_id, change_amount, reason, teacher, created_at) 
-                   VALUES (?, ?, ?, ?, ?)''',
-                (student_id, change_amount, reason, teacher, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-            )
-            
-            updated_count += 1
-        
-        # 记录分组积分历史
-        cursor.execute(
-            '''INSERT INTO group_points_history 
-               (group_id, change_amount, reason, teacher, created_at) 
-               VALUES (?, ?, ?, ?, ?)''',
-            (group_id, change_amount * updated_count, reason, teacher, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-        )
-        
-        conn.commit()
-        conn.close()
-        
-        return jsonify({
-            'message': f'成功为{updated_count}名学生更新积分',
-            'updated_count': updated_count,
-            'total_change': change_amount * updated_count
-        }), 200
-    except Exception as e:
-        print(f"批量更新分组积分失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/classes/<int:class_id>/group-ranking', methods=['GET'])
-def get_group_ranking(class_id):
-    """获取班级内分组积分排行"""
-    try:
-        check_and_init_tables()
-        
-        conn = get_db_connection()
-        
-        # 检查班级是否存在
-        class_exists = conn.execute(
-            'SELECT id FROM classes WHERE id = ?', (class_id,)
-        ).fetchone()
-        
-        if not class_exists:
-            conn.close()
-            return jsonify([])
-        
-        groups = conn.execute(
-            '''SELECT g.*, 
-                      COUNT(s.id) as student_count,
-                      SUM(s.points) as total_points,
-                      AVG(s.points) as avg_points
-               FROM groups g
-               LEFT JOIN students s ON g.id = s.group_id
-               WHERE g.class_id = ?
-               GROUP BY g.id
-               ORDER BY total_points DESC, avg_points DESC''',
-            (class_id,)
-        ).fetchall()
-        
-        conn.close()
-        
-        result = []
-        for i, group in enumerate(groups):
-            avg_points = group['avg_points'] if group['avg_points'] is not None else 0
-            result.append({
-                'id': group['id'],
-                'class_id': group['class_id'],
-                'name': group['name'],
-                'color': group['color'],
-                'student_count': group['student_count'] or 0,
-                'total_points': group['total_points'] or 0,
-                'avg_points': round(avg_points, 2),
-                'rank': i + 1
-            })
-        
-        return jsonify(result)
-    except Exception as e:
-        print(f"获取分组排行失败: {e}")
-        return jsonify([])
-
-@app.route('/api/students/<int:student_id>/group', methods=['PUT'])
-def update_student_group(student_id):
-    """更新学生所在分组"""
-    try:
-        check_and_init_tables()
-        
-        data = request.json
-        group_id = data.get('group_id')  # null 表示无分组
-        
-        conn = get_db_connection()
-        
-        # 检查学生是否存在
-        student = conn.execute(
-            'SELECT id FROM students WHERE id = ?', (student_id,)
-        ).fetchone()
-        
-        if not student:
-            conn.close()
-            return jsonify({'error': '学生不存在'}), 404
-        
-        # 如果提供了group_id，检查分组是否存在
-        if group_id is not None:
-            group = conn.execute(
-                'SELECT id FROM groups WHERE id = ?', (group_id,)
-            ).fetchone()
-            
-            if not group:
-                conn.close()
-                return jsonify({'error': '分组不存在'}), 404
-        
-        conn.execute(
-            'UPDATE students SET group_id = ? WHERE id = ?',
-            (group_id, student_id)
-        )
-        conn.commit()
-        
-        # 获取更新后的学生信息
-        updated_student = conn.execute(
-            '''SELECT s.*, g.name as group_name, g.color as group_color 
-               FROM students s 
-               LEFT JOIN groups g ON s.group_id = g.id 
-               WHERE s.id = ?''',
-            (student_id,)
-        ).fetchone()
-        
-        conn.close()
-        return jsonify(dict(updated_student)), 200
-    except Exception as e:
-        print(f"更新学生分组失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-# ============ Excel导入导出API ============
-
-@app.route('/api/students/import', methods=['POST'])
-def import_students():
-    """从Excel导入学生"""
-    try:
-        check_and_init_tables()
-        
-        # 检查文件是否存在
-        if 'file' not in request.files:
-            return jsonify({'error': '没有上传文件'}), 400
-        
-        file = request.files['file']
-        
-        if file.filename == '':
-            return jsonify({'error': '没有选择文件'}), 400
-        
-        # 检查文件格式
-        if not file.filename.endswith(('.xlsx', '.xls')):
-            return jsonify({'error': '只支持Excel文件 (.xlsx, .xls)'}), 400
-        
-        # 获取班级ID
-        class_id = request.form.get('class_id')
-        if not class_id:
-            return jsonify({'error': '请选择班级'}), 400
-        
-        # 自动创建分组选项
-        auto_create_group = request.form.get('auto_create_group', 'false') == 'true'
-        
-        # 将文件内容读取到内存
-        file_content = file.read()
-        
-        try:
-            # 使用 openpyxl 读取
-            wb = load_workbook(filename=io.BytesIO(file_content), data_only=True)
-            sheet = wb.active
-            
-            # 获取表头
-            headers = []
-            for cell in sheet[1]:
-                headers.append(str(cell.value).strip() if cell.value else '')
-                
-            # 检查必要的列
-            required_columns = ['姓名', '学号']
-            col_indices = {}
-            for col in required_columns:
-                if col not in headers:
-                    return jsonify({'error': f'Excel文件必须包含"{col}"列'}), 400
-                col_indices[col] = headers.index(col)
-            
-            # 获取可选列的索引
-            if '分组' in headers:
-                col_indices['分组'] = headers.index('分组')
-            if '初始积分' in headers:
-                col_indices['初始积分'] = headers.index('初始积分')
-
-            # 处理数据
-            success_count = 0
-            fail_count = 0
-            errors = []
-            
-            conn = get_db_connection()
-            
-            # 从第二行开始遍历
-            row_idx = 2
-            for row in sheet.iter_rows(min_row=2, values_only=True):
-                try:
-                    # 获取数据，处理可能为空的情况
-                    def get_val(idx):
-                        if idx < len(row) and row[idx] is not None:
-                            return row[idx]
-                        return ''
-
-                    name = str(get_val(col_indices['姓名'])).strip()
-                    student_id = str(get_val(col_indices['学号'])).strip()
-                    
-                    # 检查必填字段
-                    if not name or not student_id:
-                        # 只有当整行都为空时才忽略，否则报错
-                        if not any(str(cell).strip() for cell in row if cell is not None):
-                            continue
-                        errors.append(f"第{row_idx}行: 姓名和学号不能为空")
-                        fail_count += 1
-                        row_idx += 1
-                        continue
-                    
-                    # 检查学号是否已存在
-                    existing = conn.execute(
-                        'SELECT id FROM students WHERE student_id = ?',
-                        (student_id,)
-                    ).fetchone()
-                    
-                    if existing:
-                        errors.append(f"第{row_idx}行: 学号 {student_id} 已存在")
-                        fail_count += 1
-                        row_idx += 1
-                        continue
-                    
-                    # 可选字段 - 分组
-                    group_id = None
-                    if '分组' in col_indices:
-                        group_name = str(get_val(col_indices['分组'])).strip()
-                        if group_name and group_name != 'None':
-                            # 根据分组名称查找分组ID
-                            group = conn.execute(
-                                'SELECT id FROM groups WHERE name = ? AND class_id = ?',
-                                (group_name, class_id)
-                            ).fetchone()
-                            if group:
-                                group_id = group['id']
-                            elif auto_create_group:
-                                # 自动创建分组
-                                cursor = conn.cursor()
-                                try:
-                                    cursor.execute(
-                                        'INSERT INTO groups (class_id, name) VALUES (?, ?)',
-                                        (class_id, group_name)
-                                    )
-                                    group_id = cursor.lastrowid
-                                    conn.commit()
-                                except sqlite3.IntegrityError:
-                                    # 分组已存在（并发情况）
-                                    group = conn.execute(
-                                        'SELECT id FROM groups WHERE name = ? AND class_id = ?',
-                                        (group_name, class_id)
-                                    ).fetchone()
-                                    if group:
-                                        group_id = group['id']
-                                    else:
-                                        errors.append(f"第{row_idx}行: 无法创建分组 '{group_name}'")
-                                        fail_count += 1
-                                        row_idx += 1
-                                        continue
-                            else:
-                                errors.append(f"第{row_idx}行: 分组 '{group_name}' 不存在")
-                                fail_count += 1
-                                row_idx += 1
-                                continue
-                    
-                    # 初始积分（可选）
-                    initial_points = 0
-                    if '初始积分' in col_indices:
-                        try:
-                            val = get_val(col_indices['初始积分'])
-                            if val:
-                                initial_points = int(float(val)) # 处理可能是float的情况
-                        except:
-                            initial_points = 0
-                    
-                    # 插入学生数据
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        'INSERT INTO students (class_id, group_id, name, student_id, points, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-                        (class_id, group_id, name, student_id, initial_points, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-                    )
-                    new_student_id = cursor.lastrowid
-                    
-                    # 如果有初始积分，记录历史
-                    if initial_points != 0:
-                        cursor.execute(
-                            'INSERT INTO points_history (student_id, change_amount, reason, teacher, created_at) VALUES (?, ?, ?, ?, ?)',
-                            (new_student_id, initial_points, '初始积分', '系统导入', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-                        )
-                    
-                    success_count += 1
-                    
-                except Exception as e:
-                    errors.append(f"第{row_idx}行: {str(e)}")
-                    fail_count += 1
-                
-                row_idx += 1
-                
-        except Exception as e:
-             return jsonify({'error': f'无法读取Excel文件: {str(e)}'}), 400
-        
-        conn.commit()
-        conn.close()
-        
-        return jsonify({
-            'success': True,
-            'message': f'导入完成，成功 {success_count} 条，失败 {fail_count} 条',
-            'success_count': success_count,
-            'fail_count': fail_count,
-            'errors': errors[:10]  # 只返回前10个错误
-        }), 200
-        
-    except Exception as e:
-        print(f"导入学生失败: {e}")
-        return jsonify({'error': str(e)}), 500
+        if str(request.json.get('password')) == get_system_password():
+            session['logged_in'] = True
+            return jsonify({'success': True})
+        return jsonify({'success': False}), 403
+    return render_template('login.html')
 
 @app.route('/api/students/template', methods=['GET'])
-def download_template():
-    """下载Excel模板"""
+def download_student_template():
+    """下载学生导入模板 (带细则与样例)"""
     try:
         wb = Workbook()
+        ws = wb.active
+        ws.title = "学生名单填报"
         
-        # --- 学生名单 Sheet ---
-        ws1 = wb.active
-        ws1.title = '学生名单'
+        # 1. 写入表头
+        headers = ["姓名", "学号", "分组", "初始积分"]
+        ws.append(headers)
         
-        # 写入表头
-        headers = ['姓名', '学号', '分组', '初始积分']
-        ws1.append(headers)
+        # 2. 写入样例数据
+        sample = ["张小明", "2025001", "飞龙组", 100]
+        ws.append(sample)
         
-        # 写入示例数据
-        data = [
-            ['张三', '2023001', '第一组', 100],
-            ['李四', '2023002', '第二组', 80],
-            ['王五', '2023003', '第一组', 90]
-        ]
-        for row in data:
-            ws1.append(row)
-
-        # 设置列宽
-        ws1.column_dimensions['A'].width = 15
-        ws1.column_dimensions['B'].width = 15
-        ws1.column_dimensions['C'].width = 15
-        ws1.column_dimensions['D'].width = 15
-            
-        # --- 使用说明 Sheet ---
-        ws2 = wb.create_sheet(title='使用说明')
-        
-        # 写入表头
-        ws2.append(['列名', '说明', '示例'])
-        
-        # 写入说明
+        # 3. 增加说明工作表
+        ws_info = wb.create_sheet("导入细则(必读)")
         instructions = [
-            ['姓名', '学生姓名（必填）', '张三'],
-            ['学号', '学生学号，必须唯一（必填）', '2023001'],
-            ['分组', '所在分组名称（选填，如果分组不存在会自动创建）', '第一组'],
-            ['初始积分', '初始积分，默认为0（选填）', '100']
+            ["项目", "要求", "示例"],
+            ["姓名", "学生真实姓名，必填", "张小明"],
+            ["学号", "系统唯一识别码，不可重复，必填", "2025001"],
+            ["分组", "所属小组名称，选填。若填写的小组不存在，系统会自动为您创建。", "飞龙组"],
+            ["初始积分", "学生初始的分数，选填，默认为 0", "100"]
         ]
         for row in instructions:
-            ws2.append(row)
+            ws_info.append(row)
             
-        # 设置列宽
-        ws2.column_dimensions['A'].width = 15
-        ws2.column_dimensions['B'].width = 50
-        ws2.column_dimensions['C'].width = 20
+        # 设置列宽美化
+        for sheet in [ws, ws_info]:
+            for col in ['A', 'B', 'C', 'D']:
+                sheet.column_dimensions[col].width = 20
 
         output = io.BytesIO()
         wb.save(output)
         output.seek(0)
-        
-        # 使用纯英文文件名避免编码问题
-        filename = 'student_import_template.xlsx'
-        
-        return send_file(
-            output,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            as_attachment=True,
-            download_name=filename
-        )
-        
+        return send_file(output, as_attachment=True, download_name="班级成员导入模板.xlsx")
     except Exception as e:
-        print(f"下载模板失败: {e}")
         return jsonify({'error': str(e)}), 500
-
-@app.route('/api/students/export', methods=['GET'])
-def export_students():
-    """导出学生列表到Excel"""
-    try:
-        check_and_init_tables()
-        
-        class_id = request.args.get('class_id')
-        if not class_id:
-            return jsonify({'error': '请选择班级'}), 400
-        
-        conn = get_db_connection()
-        
-        # 获取班级信息
-        class_info = conn.execute(
-            'SELECT name FROM classes WHERE id = ?', (class_id,)
-        ).fetchone()
-        
-        if not class_info:
-            conn.close()
-            return jsonify({'error': '班级不存在'}), 404
-        
-        # 获取学生数据
-        students = conn.execute(
-            '''SELECT s.name, s.student_id, s.points, g.name as group_name, 
-                      s.created_at, s.id
-               FROM students s 
-               LEFT JOIN groups g ON s.group_id = g.id 
-               WHERE s.class_id = ?
-               ORDER BY s.name''',
-            (class_id,)
-        ).fetchall()
-        
-        # 获取班级分组
-        groups = conn.execute(
-            'SELECT id, name FROM groups WHERE class_id = ? ORDER BY name',
-            (class_id,)
-        ).fetchall()
-        
-        conn.close()
-        
-        # 创建Excel文件
-        wb = Workbook()
-        
-        # --- Students Sheet ---
-        ws1 = wb.active
-        ws1.title = 'Students'
-        
-        # 写入表头
-        ws1.append(['Name', 'StudentID', 'Group', 'Points', 'JoinDate'])
-        
-        # 写入数据
-        for student in students:
-            ws1.append([
-                student['name'],
-                student['student_id'],
-                student['group_name'] or '',
-                student['points'],
-                student['created_at']
-            ])
-            
-        # 设置列宽
-        ws1.column_dimensions['A'].width = 15
-        ws1.column_dimensions['B'].width = 15
-        ws1.column_dimensions['C'].width = 15
-        ws1.column_dimensions['D'].width = 10
-        ws1.column_dimensions['E'].width = 20
-
-        # --- Groups Sheet ---
-        if groups:
-            ws2 = wb.create_sheet(title='Groups')
-            ws2.append(['GroupID', 'GroupName'])
-            for group in groups:
-                ws2.append([group['id'], group['name']])
-                
-            ws2.column_dimensions['B'].width = 20
-        
-        output = io.BytesIO()
-        wb.save(output)
-        output.seek(0)
-        
-        # 使用纯英文文件名避免编码问题
-        filename = f"students_export_{class_id}_{int(time.time())}.xlsx"
-        
-        return send_file(
-            output,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            as_attachment=True,
-            download_name=filename
-        )
-        
-    except Exception as e:
-        print(f"导出学生失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-# ============ 班级统计 API ============
-
-@app.route('/api/classes/<int:class_id>/stats', methods=['GET'])
-def get_class_stats(class_id):
-    """获取班级统计信息"""
-    try:
-        check_and_init_tables()
-        
-        conn = get_db_connection()
-        
-        # 检查班级是否存在
-        class_info = conn.execute(
-            'SELECT * FROM classes WHERE id = ?', (class_id,)
-        ).fetchone()
-        
-        if not class_info:
-            conn.close()
-            return jsonify({'error': '班级不存在'}), 404
-        
-        # 学生总数
-        total_students_result = conn.execute(
-            'SELECT COUNT(*) as count FROM students WHERE class_id = ?',
-            (class_id,)
-        ).fetchone()
-        total_students = total_students_result['count']
-        
-        # 平均积分
-        avg_points_result = conn.execute(
-            'SELECT AVG(points) as avg FROM students WHERE class_id = ?',
-            (class_id,)
-        ).fetchone()
-        avg_points = avg_points_result['avg'] if avg_points_result['avg'] is not None else 0
-        
-        # 最高积分
-        max_points_result = conn.execute(
-            'SELECT MAX(points) as max FROM students WHERE class_id = ?',
-            (class_id,)
-        ).fetchone()
-        max_points = max_points_result['max'] if max_points_result['max'] is not None else 0
-        
-        # 最低积分
-        min_points_result = conn.execute(
-            'SELECT MIN(points) as min FROM students WHERE class_id = ?',
-            (class_id,)
-        ).fetchone()
-        min_points = min_points_result['min'] if min_points_result['min'] is not None else 0
-        
-        # 分组统计
-        group_stats_result = conn.execute(
-            '''SELECT COUNT(DISTINCT g.id) as group_count,
-                      AVG(group_avg.avg_points) as groups_avg_points
-               FROM groups g
-               LEFT JOIN (
-                   SELECT g.id, AVG(s.points) as avg_points
-                   FROM groups g
-                   LEFT JOIN students s ON g.id = s.group_id
-                   WHERE g.class_id = ?
-                   GROUP BY g.id
-               ) group_avg ON g.id = group_avg.id
-               WHERE g.class_id = ?''',
-            (class_id, class_id)
-        ).fetchone()
-        
-        group_count = group_stats_result['group_count'] or 0
-        groups_avg_points = group_stats_result['groups_avg_points'] or 0
-        
-        # 最近积分变动
-        recent_changes = conn.execute(
-            '''SELECT ph.*, s.name as student_name 
-               FROM points_history ph 
-               JOIN students s ON ph.student_id = s.id 
-               WHERE s.class_id = ? 
-               ORDER BY ph.created_at DESC LIMIT 10''',
-            (class_id,)
-        ).fetchall()
-        
-        conn.close()
-        
-        return jsonify({
-            'class_info': dict(class_info),
-            'total_students': total_students,
-            'avg_points': round(avg_points, 2),
-            'max_points': max_points,
-            'min_points': min_points,
-            'group_count': group_count,
-            'groups_avg_points': round(groups_avg_points, 2),
-            'recent_changes': [dict(c) for c in recent_changes]
-        })
-    except Exception as e:
-        print(f"获取班级统计失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-# ============ 模板路由 ============
-
-@app.route('/students')
-def students_page():
-    """学生管理页面"""
-    return render_template('students.html')
-
-@app.route('/points')
-def points_page():
-    """积分管理页面"""
-    return render_template('points.html')
-
-@app.route('/ranking')
-def ranking_page():
-    """排行榜页面"""
-    return render_template('ranking.html')
-
-@app.route('/groups')
-def groups_page():
-    """分组管理页面"""
-    return render_template('groups.html')
-
-@app.route('/api/test')
-def test_api():
-    """测试API端点"""
-    try:
-        check_and_init_tables()
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # 检查所有表
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        tables = cursor.fetchall()
-        table_list = [t[0] for t in tables]
-        
-        # 统计数据
-        stats = {}
-        for table in table_list:
-            cursor.execute(f"SELECT COUNT(*) as count FROM {table}")
-            count = cursor.fetchone()['count']
-            stats[table] = count
-        
-        conn.close()
-        
-        return jsonify({
-            'status': 'ok',
-            'message': 'API服务器正常运行',
-            'timestamp': datetime.now().isoformat(),
-            'database_path': app.config['DATABASE_PATH'],
-            'tables': table_list,
-            'stats': stats
-        })
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': str(e),
-            'timestamp': datetime.now().isoformat()
-        }), 500
-
-@app.route('/test')
-def test_page():
-    """测试页面"""
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head><title>测试页</title></head>
-    <body>
-        <h1>班级积分管理系统测试页面</h1>
-        <p><a href="/api/classes" target="_blank">测试班级API</a></p>
-        <p><a href="/api/groups" target="_blank">测试分组API</a></p>
-        <p><a href="/api/students/template" target="_blank">下载Excel模板</a></p>
-        <p><a href="/api/test" target="_blank">测试系统状态</a></p>
-        <p><a href="/" target="_blank">返回主页面</a></p>
-    </body>
-    </html>
-    """
-
-# ============ 奖品与兑换 API ============
-
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg', 'gif'}
-
-@app.route('/api/rewards', methods=['GET'])
-def get_rewards():
-    """获取所有奖品"""
-    try:
-        check_and_init_tables()
-        conn = get_db_connection()
-        rewards = conn.execute('SELECT * FROM rewards ORDER BY created_at DESC').fetchall()
-        conn.close()
-        return jsonify([dict(r) for r in rewards])
-    except Exception as e:
-        print(f"获取奖品失败: {e}")
-        return jsonify([])
-
-@app.route('/api/rewards', methods=['POST'])
-def add_reward():
-    """添加奖品"""
-    try:
-        check_and_init_tables()
-        
-        name = request.form.get('name')
-        description = request.form.get('description')
-        points_cost = request.form.get('points_cost')
-        stock = request.form.get('stock', 10)
-        
-        if not name or not points_cost:
-            return jsonify({'error': '名称和积分是必填项'}), 400
-            
-        image_path = ''
-        if 'image' in request.files:
-            file = request.files['image']
-            if file and allowed_file(file.filename):
-                filename = secure_filename(file.filename)
-                # 添加时间戳防止重名
-                filename = f"{int(time.time())}_{filename}"
-                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-                image_path = f"/static/uploads/{filename}"
-        
-        conn = get_db_connection()
-        conn.execute(
-            'INSERT INTO rewards (name, description, points_cost, image_path, stock) VALUES (?, ?, ?, ?, ?)',
-            (name, description, int(points_cost), image_path, int(stock))
-        )
-        conn.commit()
-        conn.close()
-        
-        return jsonify({'message': '奖品添加成功'}), 201
-    except Exception as e:
-        print(f"添加奖品失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/rewards/<int:reward_id>', methods=['DELETE'])
-def delete_reward(reward_id):
-    """删除奖品"""
-    try:
-        check_and_init_tables()
-        conn = get_db_connection()
-        conn.execute('DELETE FROM rewards WHERE id = ?', (reward_id,))
-        conn.commit()
-        conn.close()
-        return jsonify({'message': '奖品删除成功'}), 200
-    except Exception as e:
-        print(f"删除奖品失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/students/<int:student_id>/rewards', methods=['GET'])
-def get_student_rewards(student_id):
-    """获取学生的兑换状态"""
-    try:
-        check_and_init_tables()
-        conn = get_db_connection()
-        
-        # 获取所有奖品
-        rewards = conn.execute('SELECT * FROM rewards ORDER BY points_cost ASC').fetchall()
-        
-        # 获取该学生的兑换记录
-        redemptions = conn.execute(
-            'SELECT reward_id, redeemed_at FROM redemptions WHERE student_id = ?', 
-            (student_id,)
-        ).fetchall()
-        
-        redeemed_ids = {r['reward_id'] for r in redemptions}
-        
-        result = []
-        for r in rewards:
-            item = dict(r)
-            item['redeemed'] = r['id'] in redeemed_ids
-            result.append(item)
-            
-        conn.close()
-        return jsonify(result)
-    except Exception as e:
-        print(f"获取学生奖品状态失败: {e}")
-        return jsonify([])
-
-@app.route('/api/students/<int:student_id>/redeem', methods=['POST'])
-def redeem_reward(student_id):
-    """兑换奖品"""
-    try:
-        check_and_init_tables()
-        data = request.json
-        reward_id = data.get('reward_id')
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # 1. 检查学生是否存在及积分是否足够
-        student = conn.execute('SELECT points FROM students WHERE id = ?', (student_id,)).fetchone()
-        if not student:
-            return jsonify({'error': '学生不存在'}), 404
-            
-        # 2. 检查奖品是否存在
-        reward = conn.execute('SELECT points_cost, name, stock FROM rewards WHERE id = ?', (reward_id,)).fetchone()
-        if not reward:
-            return jsonify({'error': '奖品不存在'}), 404
-        
-        if reward['stock'] <= 0:
-            return jsonify({'error': '奖品库存不足'}), 400
-            
-        # 3. 检查是否已兑换
-        existing = conn.execute(
-            'SELECT id FROM redemptions WHERE student_id = ? AND reward_id = ?',
-            (student_id, reward_id)
-        ).fetchone()
-        
-        if existing:
-            return jsonify({'error': '该奖品已兑换'}), 400
-            
-        # 4. 检查积分是否足够
-        if student['points'] < reward['points_cost']:
-            return jsonify({'error': f'积分不足，需要 {reward["points_cost"]} 分'}), 400
-            
-        # 5. 执行兑换：扣分 + 扣库存 + 记录
-        cursor.execute(
-            'UPDATE students SET points = points - ? WHERE id = ?',
-            (reward["points_cost"], student_id)
-        )
-        
-        cursor.execute(
-            'UPDATE rewards SET stock = stock - 1 WHERE id = ?',
-            (reward_id,)
-        )
-        
-        cursor.execute(
-            'INSERT INTO points_history (student_id, change_amount, reason, teacher, created_at) VALUES (?, ?, ?, ?, ?)',
-            (student_id, -reward["points_cost"], f'兑换奖品：{reward["name"]}', '系统', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-        )
-        
-        cursor.execute(
-            'INSERT INTO redemptions (student_id, reward_id, redeemed_at) VALUES (?, ?, ?)',
-            (student_id, reward_id, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-        )
-        
-        conn.commit()
-        conn.close()
-        
-        return jsonify({'message': '兑换成功'}), 200
-        
-    except Exception as e:
-        print(f"兑换失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/groups/<int:group_id>/redeem', methods=['POST'])
-def redeem_group_reward(group_id):
-    """小组兑换奖品"""
-    try:
-        check_and_init_tables()
-        data = request.json
-        reward_id = data.get('reward_id')
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # 1. 检查奖品是否存在
-        reward = conn.execute('SELECT points_cost, name, stock FROM rewards WHERE id = ?', (reward_id,)).fetchone()
-        if not reward:
-            conn.close()
-            return jsonify({'error': '奖品不存在'}), 404
-            
-        if reward['stock'] <= 0:
-            conn.close()
-            return jsonify({'error': '奖品库存不足'}), 400
-            
-        # 2. 获取小组学生
-        students = conn.execute('SELECT id, name, points FROM students WHERE group_id = ?', (group_id,)).fetchall()
-        if not students:
-            conn.close()
-            return jsonify({'error': '该小组没有学生'}), 400
-            
-        student_count = len(students)
-        cost_per_student = reward['points_cost'] // student_count
-        
-        if cost_per_student == 0:
-             # 如果奖品积分小于人数，至少每人扣1分？或者不允许？
-             # 这里设为每人扣1分
-             cost_per_student = 1
-
-        total_cost = cost_per_student * student_count
-        
-        # 3. 检查每个学生积分是否足够
-        for s in students:
-            if s['points'] < cost_per_student:
-                conn.close()
-                return jsonify({'error': f'学生 {s["name"]} 积分不足 (需要 {cost_per_student} 分)'}), 400
-        
-        # 4. 执行扣分
-        for s in students:
-            cursor.execute(
-                'UPDATE students SET points = points - ? WHERE id = ?',
-                (cost_per_student, s['id'])
-            )
-            cursor.execute(
-                'INSERT INTO points_history (student_id, change_amount, reason, teacher, created_at) VALUES (?, ?, ?, ?, ?)',
-                (s['id'], -cost_per_student, f'小组兑换：{reward["name"]}', '系统', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-            )
-        
-        # 5. 扣减库存
-        cursor.execute(
-            'UPDATE rewards SET stock = stock - 1 WHERE id = ?',
-            (reward_id,)
-        )
-            
-        # 6. 记录小组兑换
-        cursor.execute(
-            'INSERT INTO group_redemptions (group_id, reward_id, redeemed_at) VALUES (?, ?, ?)',
-            (group_id, reward_id, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-        )
-        
-        # 7. 记录小组积分变动历史 (用于统计)
-        cursor.execute(
-            'INSERT INTO group_points_history (group_id, change_amount, reason, teacher, created_at) VALUES (?, ?, ?, ?, ?)',
-            (group_id, -total_cost, f'兑换奖品：{reward["name"]}', '系统', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-        )
-        
-        conn.commit()
-        conn.close()
-        
-        return jsonify({'message': f'兑换成功，每位成员扣除 {cost_per_student} 积分'}), 200
-        
-    except Exception as e:
-        print(f"小组兑换失败: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/redemptions/history', methods=['GET'])
-def get_redemption_history():
-    """获取兑换记录"""
-    try:
-        check_and_init_tables()
-        student_id = request.args.get('student_id')
-        group_id = request.args.get('group_id')
-        
-        conn = get_db_connection()
-        
-        if student_id:
-            sql = '''
-                SELECT r.name as reward_name, r.image_path, rd.redeemed_at, r.points_cost
-                FROM redemptions rd
-                JOIN rewards r ON rd.reward_id = r.id
-                WHERE rd.student_id = ?
-                ORDER BY rd.redeemed_at DESC
-            '''
-            records = conn.execute(sql, (student_id,)).fetchall()
-        elif group_id:
-            sql = '''
-                SELECT r.name as reward_name, r.image_path, gr.redeemed_at, r.points_cost
-                FROM group_redemptions gr
-                JOIN rewards r ON gr.reward_id = r.id
-                WHERE gr.group_id = ?
-                ORDER BY gr.redeemed_at DESC
-            '''
-            records = conn.execute(sql, (group_id,)).fetchall()
-        else:
-            records = []
-            
-        conn.close()
-        return jsonify([dict(r) for r in records])
-    except Exception as e:
-        print(f"获取兑换记录失败: {e}")
-        return jsonify([])
 
 if __name__ == '__main__':
-    print("=" * 60)
-    print("班级积分管理系统")
-    print("=" * 60)
+
+    init_db()
+
     
-    # 检查数据库路径
-    print(f"数据库路径: {app.config['DATABASE_PATH']}")
-    
-    # 确保data目录存在
-    data_dir = os.path.join(os.path.dirname(__file__), 'data')
-    if not os.path.exists(data_dir):
-        print(f"创建数据目录: {data_dir}")
-        os.makedirs(data_dir, exist_ok=True)
-    
-    # 初始化数据库
-    print("正在初始化数据库...")
-    success, message = init_db()
-    if success:
-        print(message)
-    else:
-        print(f"数据库初始化失败: {message}")
-    
-    # 创建示例数据
+
+    # 自动获取局域网 IP (方便手机访问)
+
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # 检查是否有班级
-        cursor.execute("SELECT COUNT(*) as count FROM classes")
-        class_count = cursor.fetchone()['count']
-        print(f"班级数量: {class_count}")
-        
-        if class_count == 0:
-            print("数据库已初始化。")
-            print("当前系统中没有班级数据，请在网页端创建新班级。")
-        
-        # 显示当前数据统计
-        print("\n当前数据统计:")
-        cursor.execute("SELECT COUNT(*) as count FROM groups")
-        group_count = cursor.fetchone()['count']
-        print(f"分组数量: {group_count}")
-        
-        cursor.execute("SELECT COUNT(*) as count FROM students")
-        student_count = cursor.fetchone()['count']
-        print(f"学生数量: {student_count}")
-        
-        conn.close()
-        
-    except Exception as e:
-        print(f"检查数据库状态时出错: {e}")
-    
-    print("=" * 60)
-    
-    # 获取本机IP
-    try:
-        # 获取本机主机名
-        hostname = socket.gethostname()
-        # 获取本机IP
-        local_ip = socket.gethostbyname(hostname)
-        
-        # 尝试通过连接外部地址获取真实的局域网IP (更准确)
+
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            # 不需要真的连接
-            s.connect(('8.8.8.8', 80))
-            local_ip = s.getsockname()[0]
-        except Exception:
-            pass
-        finally:
-            s.close()
-    except:
-        local_ip = '127.0.0.1'
+
+        s.connect(('8.8.8.8', 80))
+
+        local_ip = s.getsockname()[0]
+
+        s.close()
+
+    except: local_ip = '127.0.0.1'
+
+
 
     port = 5001
-    url = f"http://localhost:{port}"
-    mobile_url = f"http://{local_ip}:{port}"
 
-    print(f"系统启动成功！")
-    print("-" * 30)
-    print(f"【电脑端访问】: {url}")
-    print(f"【手机端访问】: {mobile_url}")
-    print("-" * 30)
-    print("提示：请确保手机和电脑连接在同一个 Wi-Fi 下。")
+    url = f"http://localhost:{port}"
+
     print("=" * 60)
-    
-    # 自动打开浏览器
-    if not os.environ.get("WERKZEUG_RUN_MAIN"): # 防止重载时重复打开
-        try:
-            webbrowser.open_new(url)
-        except:
-            pass
-    
-    # 启动服务器
-    app.run(host='0.0.0.0', port=port, debug=False) # 生产环境建议关闭 debug
-    
+
+    print("班级积分管理系统 V3 - 单班级专业版")
+
+    print(f"【电脑端访问】: {url}")
+
+    print(f"【手机端访问】: http://{local_ip}:{port}")
+
+    print("=" * 60)
+
+
+
+    # 仅在非重载模式下自动打开浏览器
+
+    if not os.environ.get("WERKZEUG_RUN_MAIN"):
+
+        try: webbrowser.open_new(url)
+
+        except: pass
+
+
+
+    app.run(host='0.0.0.0', port=port, debug=False)
